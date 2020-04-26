@@ -1,0 +1,30 @@
+use uo;
+use cfgfile;
+use os;
+
+include ":taming:taming";
+
+program Tame(who)
+	var targ := target(who);
+	
+	if ( targ.IsA(POLCLASS_NPC) )
+		targ.SetMaster(who);
+				
+		SetObjProperty(targ, "owner", who.serial);
+		SetObjProperty(targ, "name", targ.name);
+		
+		if ( !GetObjProperty(targ, "script") )
+			SetObjproperty(targ, "script", targ.script);
+		endif
+			
+		targ.script := ":ghaia:follower";
+		RestartScript(targ);
+      AddPet(who, targ.serial);
+      targ.InitPetProperties(1);
+		targ.SetMaster(who);
+		var petname := targ.name;
+		Run_Script_To_Completion(":death:npcdeath", {targ});
+		SetName(targ, petname);
+
+	endif
+endprogram

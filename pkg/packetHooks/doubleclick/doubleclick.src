@@ -1,0 +1,61 @@
+use uo;
+use math;
+use polsys;
+include "include/say";
+include ":charactercreation:feats";
+
+CONST BYTE_DEFENDER := 1;
+
+program requestAttack()
+	Print( "INSTALLING: Double Click PH..." );
+	return 1;
+endprogram
+
+
+exported function HandleDoubleClick( who, byref packet )
+
+	var defender := SystemFindObjectBySerial(packet.GetInt32(BYTE_DEFENDER));
+
+	//não sei como, mas as vezes vem sem, entao deixa o pol tratar
+	if (!defender)
+		return 0;
+	elseif (defender == who.backpack)
+		return 0;
+	elseif (defender.container == who.backpack)
+		return 0;
+	endif
+
+	var equips := ListEquippedItems(who);
+	if (defender in equips)
+		return 0;
+	endif
+
+	//se tiver dentro de container, checa a distancia pro container raiz
+	while (defender.container )
+		defender := defender.container; // hack pra pegar a raiz
+	endwhile
+
+	if( Distance(who, defender) > 15 && !who.Enabled("moveany") )
+		SendSysMessageEx(who, "Você está muito distante.", SSM_FAIL);
+		return 1;
+	elseif ( abs(who.z - defender.z ) > 12 && defender.isa(POLCLASS_MOBILE) && (!who.weapon.isBow() && !who.weapon.isMagicWeapon()))
+		SendSysMessageEx(who, "Você está muito distante.", SSM_FAIL);
+		return 1;
+	endif
+   
+	if(!CheckLineOfSight(who, defender))
+		SendSysMessageEx(who, "Você não enxerga o alvo.", SSM_FAIL);
+		return 1;
+	endif
+
+   if (who.warmode)
+      if (!defender.warmode && defender.isA(POLCLASS_MOBILE))
+         var itemcfg := ReadConfigFile(":combat:itemdesc");
+         if (AP_GetTrueSkill(who, LAMINAS_CURTAS) >= 5 && itemcfg[who.weapon.objtype].Pericia == LAMINAS_CURTAS)
+            SetObjProperty(defender, "#assinate", who.serial);
+         endif
+      endif
+   endif
+   
+	return 0;
+endfunction

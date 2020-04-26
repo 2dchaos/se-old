@@ -1,0 +1,41 @@
+use uo;
+use util;
+
+include "include/say";
+include ":gumps:requestgump";
+include ":fls_core:fls_crafting";
+
+program usar_etiqueta(who, the_item)
+
+	if (!CheckForPen(who.backpack, 0))
+		SendSysMessageEx(who, "Você não possui uma pena e o tinteiro para escrever.");
+		return;
+	endif
+
+	var itemdesc :=  RequestGump(who, "Qual nome deseja escrever aqui?");
+	if(!itemdesc)
+		SendSysMessageEx(who, "Cancelado.");
+		return;
+	endif
+	SendSysMessageEx(who, "Selecione o item para marcar com a etiqueta.");
+	var use_on := Target(who);
+
+	if(use_on.movable == 0)
+		SendSysMessageEx(who, "Você não pode banhar isto.");
+		return;
+	endif
+	if(!Accessible(who, use_on))
+		SendSysMessageEx(who, "Você não alcanca isto.");
+		return;
+	endif
+
+	if (use_on.graphic == 3849)
+		 SetName(use_on, itemdesc); //
+		 use_on.color := the_item.color;
+	else
+		SendSysMessageEx(who, "Este item não pode ser rotulado.");
+	endif
+
+
+   DestroyItem(the_item);
+endprogram

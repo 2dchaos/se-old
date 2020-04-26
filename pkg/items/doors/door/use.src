@@ -1,0 +1,75 @@
+/* $Id$
+ *
+ * Purpose:
+ * Closes doors on startup.
+ *
+ */
+
+use uo;
+use os;
+
+include ":keys:key";
+include ":traps:traps";
+include "include/say";
+
+program useScript(mobile, door)
+
+	if ( GetObjProperty(door, "TrapList") != error)
+		RunTraps(door, mobile);
+		return 0;
+	endif
+
+	if ( DoorIsLocked(mobile, door) )
+		RunTraps(door, mobile);
+		return 0;
+	elseif ( door.IsOpen() )
+		var pid := CInt(GetObjProperty(door, "#ClosePid"));
+		GetProcess(pid).SendEvent("stop");
+	endif
+
+	door.doToggle();
+	
+	Detach();
+	
+	AutoClose(door);
+	
+	return 1;
+endprogram
+
+function DoorIsLocked(mobile, door)
+	if ( !door.locked )
+		// Nothing to worry about.
+		return 0;
+	elseif ( door.IsOpen() )
+		// Allow an open door to always be closed.
+		return 0;
+	elseif ( door.IsInside(mobile) )
+		SendSysMessageEx(mobile, "Você abre a porta por dentro.", SSM_INFO);
+		return 0;
+	elseif ( KP_HasKeyForLock(mobile, door) )
+		SendSysMessageEx(mobile, "Você usou a chave para abrir a porta.", SSM_INFO);
+		return 0;
+	elseif ( mobile.Enabled("ignoredoors") )
+		SendSysMessageEx(mobile, "You open the door with GM previlegies.", SSM_INFO);
+		return 0;
+	else
+		PrintTextPrivate(door, "Isso está trancado.", mobile);
+		return 1;
+	endif
+endfunction
+
+function AutoClose(door)
+	// Wait 10 seconds, and auto-close the door.
+	// If someone manually closes the door this instance of the use script
+	// will get an event from the new one and stop waiting to close it.
+	if ( door.IsOpen() )
+		SetObjProperty(door, "#ClosePid", GetPid());
+		var event := Wait_For_event(20);
+		if ( !event )
+			door.Close();
+		endif
+		EraseObjProperty(door, "#ClosePid");		
+	endif
+	
+	return 1;
+endfunction

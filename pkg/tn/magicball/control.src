@@ -1,0 +1,83 @@
+use uo;
+use util;
+use os;
+
+include "include/facings";
+include "include/say";
+include ":combat:combat";
+const BALL_FLAG := LISTEX_FLAG_NORMAL|LISTEX_FLAG_HIDDEN;
+
+program usedardo(ball)
+   sleep(1);
+   var owner := ball.GetOwner();
+   var direction := ball.GetDirection();
+   while (ball)
+      if (direction)
+         if (typeof(direction) == "Integer" && direction <= 8)
+            var mod := GetModByFacing(direction);
+            ball.movable := 1;
+            MoveObjectToLocation(ball, ball.x+mod[1], ball.y+mod[2], ball.z, ball.realm, MOVEOBJECT_FORCELOCATION);
+            ball.movable := 0;
+         else
+            var targ := SystemFindObjectBySerial(direction);
+            if (!targ)
+               return DestroyItem(ball);
+            endif
+
+            var mod := GetModByFacing(GetFacing(ball.x, ball.y, targ.x, targ.y));
+            ball.movable := 1;
+            MoveObjectToLocation(ball, ball.x+mod[1], ball.y+mod[2], targ.z, ball.realm, MOVEOBJECT_FORCELOCATION);
+            ball.movable := 0;
+         endif
+      endif
+
+      var type := ball.GetType();
+      var effect := ball.GetEffect();
+      var dmg_info := ball.GetDmgInfo();
+      case (type)
+         0:default:
+            var mobile := CheckifIsAlly(owner, ListMobilesNearLocationEx(ball.x, ball.y, ball.z, 0, BALL_FLAG, ball.realm)).randomentry();
+            if (mobile)
+               PlayObjectCenteredEffect(mobile, effect, 10, 10);
+               DamageFLS(mobile, RandomDiceRoll(dmg_info.dice), dmg_info.type);
+               ball.PlayBallSound();
+               DestroyItem(ball);
+            endif
+            break;
+         1:
+            var touch := CheckifIsAlly(owner, ListMobilesNearLocationEx(ball.x, ball.y, ball.z, 0, BALL_FLAG, ball.realm));
+            if (touch.size() >= 1)
+               var mobs := CheckifIsAlly(owner, ListMobilesNearLocationEx(ball.x, ball.y, ball.z, 3, BALL_FLAG, ball.realm));
+               foreach mob in mobs
+                  PlayObjectCenteredEffect(mob, effect, 10, 10);
+                  DamageFLS(mob, RandomDiceRoll(dmg_info.dice), dmg_info.type);
+                  ball.PlayBallSound();
+                  sleepms(2);
+               endforeach
+               DestroyItem(ball);
+            endif
+            break;
+         2:
+            var mobile := CheckifIsAlly(owner, ListMobilesNearLocationEx(ball.x, ball.y, ball.z, 4, BALL_FLAG, ball.realm)).randomentry();
+            if (mobile)
+               var newball := CreateItemAtLocation(ball.x, ball.y, ball.z, 0xFFBE);
+               newball.SetBallGraphic(GetObjProperty(ball, "sfx_graphic"), GetObjProperty(ball, "sfx_color"));
+               newball.SetOwner(owner);
+               newball.SetDuration(8);
+               newball.SetDirection(mobile.serial);
+               newball.SetDmgInfo(dmg_info);
+               newball.SetEffect(effect);
+               newball.SetSound(GetObjProperty(ball, "sfx_ex"));
+               ball.PlayBallSound();
+            endif
+               sleep(4);
+            break;
+      endcase
+
+      if (ball && ball.IsExpired())
+         DestroyItem(ball);
+      endif
+
+      sleepms(800);
+   endwhile
+endprogram

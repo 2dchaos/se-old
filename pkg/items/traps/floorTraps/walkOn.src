@@ -1,0 +1,151 @@
+/* $Id$
+ *
+ * Explanation:
+ * Generic walk on script for floor traps.
+ * Plays a stationary effect to make it appear animated and deals damage.
+ *
+ */
+
+use uo;
+use os;
+use cfgfile;
+use util;
+
+include "include/damage";
+include "include/say";
+include ":blood:blood";
+include ":charactercreation:feats";
+include "include/sysEvent";
+include ":timedscripts:timedScripts";
+include ":fls_core:fls_characters";
+include ":traps:traps";
+
+program TrapWalkOn(mobile, trap)
+	if ( mobile.dead )
+		// Ghosts dont trigger traps.
+		return 0;
+	elseif ( mobile.concealed )
+		// Concealed GM's dont trigger traps.
+		return 0;
+	elseif ( cint(GetObjProperty(trap, "trap_inativa")) == 1)
+     		return 0;
+	elseif ( mobile.npctemplate )
+		return 0;
+	endif
+	
+	var cfg := ReadConfigFile(":*:itemdesc");
+	var atrai := {};
+	cfg := cfg[trap.objtype];
+
+	// Se for trap atraiinimigo
+	if(trap.objtype == 0xff99)
+		trap.invisible := 0;
+		SendSysMessageEx(mobile, "Você acionou uma armadilha e chamou a atenção das criaturas próximas a você.", SSM_FAIL);
+
+		var mobiles := ListMobilesNearLocation( trap.x, trap.y, trap.z, 20, realm := _DEFAULT_REALM );
+		PlaySoundEffect( trap, 558 );
+		PlaySoundEffect( trap, 75 );
+		atrai.append(trap.x);
+		atrai.append(trap.y);
+		var ev := struct;
+		ev.+type := EVID_HERDING;
+		ev.+data := atrai;
+
+		foreach mob in mobiles
+			SendEvent(mob, ev);
+		endforeach
+
+		sleep(10);
+		return 1;
+	endif
+	
+	// if (cint(trap.objtype) == 0xff9A)//beartrap
+	// 	do
+	// 		if (!GetObjProperty(trap, "trap_ativada"))
+	// 			trap.invisible := 0;
+	// 			var tempo := 15;
+	// 			var dmg := CInt(RandomDiceRoll("1d10"));
+	// 			SendSysMessageEx(mobile, "Você ativou uma armadilha!", SSM_FAIL);
+	// 			if (rollResistDice(mobile, DEXTERITY) < 12)
+	// 				if (HaveFeat(mobile, "Evasao"))
+	// 					SendSysMessageEx(mobile, "Você escapou completamente da armadilha.", SSM_INFO);
+	// 					sleep(10);
+	// 					continue;
+	// 				else
+	// 					SendSysMessageEx(mobile, "Você evitou ficar totalmente preso na armadilha.", SSM_INFO);
+	// 					tempo := 5;
+	// 					dmg := CInt(dmg * 0.5);
+	// 				endif
+	// 			else
+	// 				if (HaveFeat(mobile, "Evasao Aprimorada"))
+	// 					SendSysMessageEx(mobile, "Por instinto você se livrou um pouco da armadilha.", SSM_INFO);
+	// 					tempo := 5;
+	// 					dmg := CInt(dmg * 0.5);
+	// 				endif
+	// 			endif
+	// 			SendSysMessage(mobile, "Você ficou preso na armadilha.");
+	// 			TS_StartTimer(mobile, "paralysis", tempo);
+	// 			PlaySoundEffect( mobile, 0x3BA );
+	// 			SetObjProperty(trap, "trap_ativada", 1);
+	// 			sleep(2);
+	// 			DamageFLS(mobile, dmg);
+	// 			performaction(mobile, 0x14);
+	// 			if (mobile.gender == 1)
+	// 				PlaySoundEffect( mobile, 0x32F );
+	// 			elseif (mobile.gender == 0)
+	// 				PlaySoundEffect( mobile, 0x441 );
+	// 			endif
+	// 			sleep(tempo);
+	// 			EraseObjProperty(trap, "trap_ativada");
+	// 		endif
+	// 		sleep(10);
+	// 	dowhile (mobile.x == trap.x && mobile.y == trap.y && mobile.z == trap.z && !GetObjProperty(trap, "trap_inativa"));
+	// 	return 1;
+	// endif
+
+	do	
+		trap.invisible := 0;
+		SendSysMessageEx(mobile, "Você ativou uma armadilha!", SSM_FAIL);
+		PlayStationaryEffect(trap.x, trap.y, trap.z, CInt(cfg.Animation), 100, 11, 0, trap.realm);
+		//TODO colocar level nas traps
+      var strength := GetObjProperty(trap, "danger");
+      var danger   := GetObjProperty(trap, "level");
+      if (!strength)
+         strength := 1;
+      endif
+
+      if (!danger)
+         danger := 1;
+      endif
+
+      var diff     := GetTrapAC(danger);
+      var dmg := getTrapDamage(strength, danger);
+      
+		if (rollResistDice(mobile, DEXTERITY) > diff)
+         if (AP_GetTrueSkill(mobile, SABOTAGEM) < 6)
+            SendSysMessageEx(mobile, "Você evitou parte do dano da armadilha.", SSM_INFO);
+            dmg := CInt(cdbl(dmg) * 0.5);
+         else
+            SendSysMessageEx(mobile, "Você evitou a armadilha", SSM_INFO);
+            dmg := 0;
+         endif
+      elseif (AP_GetTrueSkill(mobile, SABOTAGEM) >= 6)
+         SendSysMessageEx(mobile, "Você evitou parte do dano da armadilha.", SSM_INFO);
+         dmg := CInt(cdbl(dmg) * 0.5);
+		endif
+      
+      
+		DamageFLS(mobile, dmg, cfg.dmgtype);
+		performaction(mobile, 0x14);
+      if (dmg > 0)
+         if (CheckGender(mobile) == 2)
+            PlaySoundEffect( mobile, 0x32F );
+         elseif (CheckGender(mobile) == 1)
+            PlaySoundEffect( mobile, 0x441 );
+         endif
+      endif
+		sleep(10);
+	dowhile (mobile.x == trap.x && mobile.y == trap.y && mobile.z == trap.z && !GetObjProperty(trap, "trap_inativa"));
+	
+	return 1;
+endprogram

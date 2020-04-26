@@ -1,0 +1,36 @@
+use uo;
+use os;
+use cfgfile;
+
+include "include/client";
+include "include/sounds";
+include "include/say";
+include "include/utils";
+include "include/damage";
+include ":magery:basicMagery";
+program animateSword(params)
+	var who := params[1];
+	var spellinfo := params[2];
+	var targ := params[3];
+	params := 0; // No longer needed
+
+   var phase_coords := GetCoordsInLine(who.x, who.y, targ.x, targ.y);
+   phase_coords.Erase(1);
+   foreach coord in phase_coords
+      var item := CreateItemAtLocation(coord.x, coord.y, targ.z, "acid", 1, who.realm);
+      SetObjProperty(item, "owner", who.serial);
+      SetObjProperty(item, "AcidDice", MageDiceTable("B", cint(spellinfo.powered)));
+      PrintText(item, "*ácido se forma no chão*");
+   endforeach
+
+   for i := 0 to 2
+      var point := randomPlace(targ, 3);
+      var item := CreateItemAtLocation(point.x, point.y, targ.z, "acid", 1, who.realm);
+      SetObjProperty(item, "owner", who.serial);
+      SetObjProperty(item, "AcidDice", MageDiceTable("B", cint(spellinfo.powered)));
+      PrintText(item, "*ácido se forma no chão*");
+      sleepms(2);
+   endfor
+
+	return 1;
+endprogram

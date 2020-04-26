@@ -1,0 +1,206 @@
+/* $Id: npcdeath.src 916 2005-11-05 23:44:32Z austin $
+ *
+ * Purpose
+ * This script allows side effects to be triggered as a result of NPC death, like unmounting
+ * players off their dying mount, playing death sounds, etc. This script is common for all NPCs,
+ * and is called for each.
+ *
+ */
+use uo;
+use os;
+use util;
+use cfgfile;
+use storage;
+
+include ":containers:merchantUtil";
+include ":timedscripts:timedScripts";
+include ":death:death";
+include ":mounts:mounts";
+include ":attributes:vitals";
+include ":combat:hitscripts";
+include "include/say";
+include "include/damage";
+include ":yggdrasil:spawnSpot";
+include ":yggdrasil:boss";
+include ":faccao:faccao";
+
+//include ":spawnnet:spawnnet";
+//include ":spawnregion:spawn";
+
+program core_npcDeath(params)
+	var corpse := params[1];
+
+	var lastHit := GetObjProperty(corpse, "LastDamage"); 
+	if (":combat:weaponHitScripts/generic" in lastHit.hitscript)
+		var attacker := SystemFindObjectBySerial(lastHit.serial);
+		if (attacker != error)
+			execonkill(attacker, corpse);
+		endif
+	endif
+   
+	if (getObjProperty(corpse, "owner")) //se for tamed, atualiza a prop tamedpets do master
+		var masterserial := getObjProperty(corpse, "owner");
+		var master := SystemFindObjectBySerial(masterserial);
+      master.followers := cint(GetNumPets(master));
+	endif
+
+   var guild_ref := GetObjProperty(corpse, "guild");
+   if (guild_ref)
+      var guild := FindGuild(guild_ref);
+      var npcs := guild.getProp("npcs_active");
+      var index := FindInArray(npcs, struct{ "serial" := GetObjProperty(corpse, "serial") });
+      if (index)
+         var who_name := corpse.desc["A corpse of"] := "";;
+         if (!GetObjProperty(corpse, "GuardKill"))
+            AddReport(guild, "{} foi morto".format(who_name));
+         else
+            AddReport(guild, "{} foi dispensado do serviço".format(who_name));
+         endif
+         npcs.Erase(index);
+         guild.setProp("npcs_active", npcs);
+      endif
+   endif
+
+	// foreach mob in (ListMobilesNearLocation(corpse.x, corpse.y, corpse.z, 5, corpse.realm))
+	// 	if (cint(GetObjProperty(mob, "#satisfacaosadica")))
+	// 		if (cint(GetObjProperty(mob, "#satisfacaosadica")) > readgameclock())
+	// 			PlayMovingEffect( corpse, mob, 14202, 5, 1,  0 );
+	// 			PlaySoundEffect(mob, 383);
+	// 			HealFLS(mob, 5);
+	// 			recalcvitals(mob);
+	// 		endif
+	// 	endif
+		
+	// 	if ( (GetObjProperty(mob, "#presenteespiritual") != error) )
+	// 		if (GetObjProperty(mob, "#presenteespiritual") > readgameclock())
+	// 			var souls := Cint(getobjProperty(mob, "souls"));
+	// 			souls := souls + 1;
+	// 			SetobjProperty(mob, "souls", souls);
+	// 			PlayMovingEffect( corpse, mob, 14202, 5, 1,  0 );
+	// 			PlaySoundEffect(mob, 383);
+	// 			HealMana(mob, 10);
+	// 		endif
+	// 	endif
+	// endforeach
+
+	TS_Death(corpse); // Will still get the PID from the corpse.
+
+	var corpse_name := corpse.desc;
+	SetObjProperty(corpse, "corpsename", corpse_name);
+	corpse_name["A corpse of "] := "";
+	SetName(corpse, "corpo de {}".format(corpse_name));
+	SetObjProperty(corpse, "originalname", corpse_name);
+	SetCooldown(corpse, "resurrect", 200);
+	
+	var template := GetObjProperty(corpse, "npctemplate"); // Set by the core.
+	var npc_cfg := NPC_GetNPCConfig(template);
+
+	// var speech := GetConfigStringArray( npc_cfg[template], "diespeech" );
+	// if (speech.size() > 0 && RandomInt(100)  < 30) //sempre 30% de chance de falar
+	// 	PrintTextAbove(corpse, speech[RandomInt(speech.size()+1)]);
+	// endif
+
+	//printtextabove(corpse, "spawnpoint " + spawnpoint);
+   var changeskin := GetObjProperty(corpse, "skinchanged");
+   if (changeskin)
+      var item := SystemFindObjectBySerial(changeskin);
+      DestroyItem(item);
+   endif
+
+	var death_script := npc_cfg.DeathScript;
+	if (GetObjProperty(corpse, "spawnkill") == error)
+      removeFromSpawn(getobjProperty(corpse, "spawnpoint"), corpse);
+	   var boss := GetBossStruct(corpse, GetObjProperty(corpse, "serial") );	
+		if (boss && boss.deathevent)
+         foreach nevent in (boss.deathevent)
+         //	printtextabove(corpse, " " + nevent.type);
+            if ( (nevent.type == "Criar Npcs") && (cint(nevent.x) == 6) && (cint(nevent.y) == 6) && (cint(nevent.z) == 6)  )
+               nevent.x := corpse.x;
+               nevent.y := corpse.y;
+               nevent.z := corpse.z;
+               //printtextabove(corpse, "mudei o evento");
+            endif
+            ExecuteEvent(nevent);				
+         endforeach
+		endif
+
+		if ( death_script )
+			params.Append(npc_cfg);
+			var result := Start_Script("deathscripts/"+death_script, params);
+			if ( result.errortext )
+				PrintTextAbove(corpse, "Error::Death Script -"+result.errortext);
+				SysLog("Error::Death Script Tmplt:["+template+"] Desc:["+corpse.desc+"] Ser:["+Hex(corpse.serial)+"] - "+result.errortext);
+			endif
+		endif
+	endif
+
+//	if (GetObjProperty(corpse, "spawnnet")) //se for spawnado pelo spawnet
+//		SpawnNet_Clear(corpse);
+//	elseif (GetObjProperty(corpse, "SpawnRegion") )//se for spawnado pelo regionspawn
+//		SpawnRegionDeath(corpse);
+//	endif		
+
+	DP_PlayDeathSound(corpse);
+	CPM_DeleteContainers(corpse);
+
+	//printtextabove(corpse, " " + corpse);	
+
+	if (corpse)
+		var loot := NoLootCheck(corpse, npc_cfg);
+		var corp := NoCorpseCheck(corpse, npc_cfg);
+
+		if (!(corp || loot))
+			MP_DeathUnmount(corpse);
+		endif
+	endif
+endprogram
+
+function NoLootCheck(corpse, npc_cfg)
+	if ( GetObjProperty(corpse, "GuardKill") );
+		// Nothing
+	elseif ( GetObjProperty(corpse, "guardkill") ); 
+		// Nothing - Old CProp
+	elseif ( npc_cfg.NoLoot );
+		// Nothing
+	elseif ( GetObjProperty(corpse, "summoned") );
+		// Nothing;
+      
+	else
+		return 0;
+	endif
+	
+	// No corpse. Don't drop backpack contents.
+	//PrintTextAbove(corpse, "*guardkilling*");
+	foreach item in (EnumerateItemsInContainer(corpse))
+		if ( item.container == corpse )
+			DestroyItem(item);
+		endif
+		sleepms(2);
+	endforeach
+	//printtextabove(corpse, "no loot check");
+	//no loot  não destroi o corpo, so NoCorpse
+	//DestroyItem(corpse);
+	
+	return 1;
+endfunction
+
+function NoCorpseCheck(corpse, npc_cfg)
+	if ( !npc_cfg.NoCorpse && !GetObjProperty(corpse, "NoCorpse") && !GetObjProperty(corpse, "nocorpse") && !GetObjProperty(corpse, "summoned"));
+		return 0;
+	endif
+	
+	// No corpse. Place backpack contents where the corpse is.
+	//printtextabove(corpse, "no corpse");
+	foreach item in (EnumerateItemsInContainer(corpse))
+		//if ( item.container == corpse )
+			var itm := MoveObjectToLocation(item, corpse.x, corpse.y, corpse.z, item.realm, MOVEOBJECT_FORCELOCATION);
+			
+		//endif
+		//printtextabove(corpse, " " + item + " " + itm);
+		sleepms(5);
+	endforeach
+	//printtextabove(corpse, "no corpse check");
+	DestroyItem(corpse);
+	
+	return 1;
+endfunction

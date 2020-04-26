@@ -1,0 +1,31 @@
+use uo;
+use os;
+use util;
+
+include ":containers:settings";
+include "include/dungeons";
+
+program control_Corpse(corpse)
+	if ( corpse.NPCTemplate() )
+      if (corpse.NPCTemplate()["moriquendi"] && GetGlobalProperty("dia") != "noite" && !inDungeon(corpse))
+         DestroyItem(corpse);
+      endif
+		return 0;
+	endif
+
+	var settings := CP_GetSettingsCfgElem("Corpse");
+	var decay_wait := CInt(settings.CorpseDecay);
+	if ( !decay_wait )
+		return 0;
+	endif
+
+	// Script will handle decay time, not the core.
+	corpse.decayat := 0;
+	Sleep(decay_wait);
+	var owner := corpse.GetOwner();
+	if (GetObjProperty(owner, "morto") || !owner)
+		corpse.MakeRemains();
+	endif
+
+	return 1;
+endprogram

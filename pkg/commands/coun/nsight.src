@@ -1,0 +1,25 @@
+use uo;
+use util;
+
+
+program command_nsight(who, level)
+   var targ;
+   if (who.cmdlevel >= 4)
+      targ := Target(who);
+   endif
+
+   if (!targ)
+      targ := who;
+   endif
+
+	level := CInt(level);
+	if ( level >= 0 )
+		targ.SetLightLevel(level, 9000);
+	else
+		// -1 restores the real light level
+		SendSysMessage(targ, "Restoring normal vision.");
+		targ.SetLightLevel(1, 0);
+	endif
+	
+	return 1;
+endprogram

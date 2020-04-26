@@ -1,0 +1,175 @@
+use uo;
+
+include ":attributes:attributeConstants";
+include ":attributes:attributes";
+include ":charactercreation:feats";
+include "include/say";
+include ":tn:cooldown";
+include "include/facings";
+
+program skill_Hide(who)
+	EraseObjProperty(who, "IsMeditating");
+	EraseObjProperty(who, "HealTimer");
+	EraseObjProperty(who, "#overridehiding");
+	var orig_x := who.x;
+	var orig_y := who.y;
+
+	if ( who.hidden )
+		Start_Script("stealth", who);
+		// Stealth
+		return;
+	elseif ( !CanHide(who, orig_x, orig_y) )
+		return;
+	elseif ( !AP_ConsumeVital(who, STAMINA, 4) )
+		SendSysMessageEx(who, "Você está muito cansado para tentar se esconder.", SSM_FAIL);
+      return;
+	elseif ( GetProcess(CInt(GetObjProperty(who, "#HidePid"))) )
+		SendSysMessageEx(who, "Você ja esta tentando se esconder.", SSM_FAIL);
+		return;
+	else
+		SetObjProperty(who, "#HidePid", GetPid());
+	endif
+
+	SendSysMessageEx(who, "Você comecou a tentar se esconder...", SSM_INFO);
+
+   var dif := 18 - GetSkillBonus(who, FURTIVIDADE);
+	while ( 1 )
+		sleep(2);
+		
+		if ( !CanHide(who, orig_x, orig_y) )
+			break;
+		endif
+		var check := rollAttrDice(who, DEXTERITY, (GetGlobalProperty("dia") == "noite")) + GetSkillBonus(who, "Furtividade");
+		if( check >= dif )
+			SendSysMessageEx(who, "Você se escondeu.", SSM_INFO);
+			who.hidden := 1;
+			var a := start_script(":sneak:stealthmode", array{who});
+			//sendsysmessage(who, " "+ a);
+			EraseObjProperty(who, "#steathsteps");
+			if (GetCooldown(who, "partyhiding") > 0) // Se tiver usado habilidade de Emboscada
+				HidingParty(who);
+			endif
+			break;
+		elseif (check >= 14)
+			SendSysMessageEx(who, "Você falhou ao tentar se esconder.", SSM_FAIL);
+			who.hidden := 0;
+		else // Falha Crítica
+			PrintText(who, "*tentando se esconder*");
+		endif
+	endwhile
+	
+	SetObjProperty(who, "#hidewait", readgameclock()+5);
+endprogram
+
+function HidingParty(who)
+
+	var festa := who.party;
+
+	if (!festa)
+		return;
+	endif
+
+	var skill := AP_GetSkill(who, FURTIVIDADE);
+
+	foreach member in (festa.members)
+		if (member.serial != who.serial)
+			if (Distance(who, member) < 8)
+				if (CanHide(member, member.x, member.y, skill))
+					SendSysMessageEx(member, "Você esta preparando a emboscada!", SSM_INFO);
+					member.hidden := 1;
+					start_script(":sneak:stealthmode", array{who});
+					SetObjProperty(member, "#overridehiding", skill);
+				else
+					SendSysMessageEx(member, "Você não pode se esconder!", SSM_FAIL);
+					SendSysMessageEx(who, member.name +" não consegue se esconder!", SSM_FAIL);
+				endif
+			endif
+		endif
+	endforeach
+
+endfunction
+
+function CanHide(who, orig_x, orig_y, override_hiding := 0)
+   if ( who.x != orig_x || who.y != orig_y )
+		SendSysMessageEx(who, "Você parou de tentar se esconder.", SSM_FAIL);
+		return 0;
+	elseif ( GetEquipmentByLayer(who, 0x19) ) // Equip de Montaria
+		SendSysMessageEx(who, "Você não pode fazer isto montado.", SSM_FAIL);
+		return 0;
+	elseif ( who.frozen )
+		SendSysMessageEx(who, "Você não pode fazer isto.", SSM_FAIL);
+		return 0;
+	endif
+
+	// var skill := AP_GetSkill(who, FURTIVIDADE);
+	// if (override_hiding)
+	// 	skill := override_hiding;
+	// endif
+	// var range := GetHidingRange(skill);
+
+	// var rangebonus := Cint(GetObjProperty(who, "esconderseaprimorado"));
+	// range := range - rangebonus;
+	// if (range <= 1)
+	// 	range := 1;
+	// endif
+
+	var hostiles := ListHostiles(who, 6);
+	if ( hostiles[1] )
+		SendSysMessageEx(who, "Você não pode se esconder enquanto " + hostiles[1].name + " esta atacando você.", SSM_FAIL);
+		return 0;
+	endif
+	
+
+	//Caso queira colocar novamente aquele esquema de não se esconder com pessoas OLHANDO
+   var num_watching := GetWatchingPeople(who);
+   var skill := cint(AP_GetStat(who, DEXTERITY, RETURN_BONUS));
+
+   if (skill < 1)
+      skill := 0;
+   endif	
+
+   if ( num_watching > skill )
+      SendSysMessageEx(who, "Existem muitas pessoas olhando você se esconder aqui.", SSM_FAIL);
+      return 0;
+   endif
+	
+	return 1;
+endfunction
+	
+function GetWatchingPeople(who)
+	var counter := 0;
+	
+	// var range := GetHidingRange(AP_GetSkill(who, FURTIVIDADE));
+	foreach person in ListMobilesInLineOfSight(who, 6)
+		if ( IsFacing(person, who.x, who.y) && person.acctname && !person.master )
+			counter := counter+1;
+		endif
+		
+		sleepms(4);
+	endforeach
+	
+	return counter;
+endfunction
+
+function GetHidingRange( skill )
+
+  if (skill >= 100)
+    return 4;
+  elseif( skill >= 90 )
+    return 4;
+  elseif( skill >= 80 )
+    return 6;
+  elseif( skill >= 70 )
+    return 7;
+  elseif( skill >= 60 )
+    return 8;
+  elseif( skill >= 50 )
+    return 9;
+  elseif( skill >= 40 )
+    return 10;
+  elseif( skill >= 30 )
+    return 12;
+  else
+    return 15;
+  endif
+endfunction

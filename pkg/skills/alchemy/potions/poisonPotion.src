@@ -1,0 +1,15 @@
+use os;
+use uo;
+use util;
+use cfgfile;
+include ":alchemy:alchemy";
+
+program drink_blue(who, potion)
+  if(!checkifcandrink(who, potion, "green_potion", 0))
+    return;
+  endif
+
+  do_poison(who, potion);
+  
+  Detach();
+endprogram

@@ -1,0 +1,23 @@
+use uo;
+use os;
+use cfgfile;
+
+include "include/sounds";
+include "include/say";
+
+program Install()
+	return 1;
+endprogram
+
+exported function isPole(pole)
+   return 1;
+endfunction
+
+exported function GetBait(pole)
+   var bait := GetObjProperty(pole, "bait");
+   if (!bait)
+      return 0;
+   endif
+
+   return bait;
+endfunction

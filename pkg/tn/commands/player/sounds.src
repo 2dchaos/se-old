@@ -1,0 +1,156 @@
+
+use basic;
+use uo;
+use util;
+use os;
+include ":fls_core:fls_characters";
+include "include/sounds";
+
+program sound(who, text)
+   var layout := array(
+      "page 0",
+      "resizepic 50 50 3600 430 430",
+      "checkertrans 50 50 430 430",
+      "text 160 65 500 0",
+      "gumppic 70 85 96",
+      "button 70 100 2103 2104 1 0 1",
+      "text 90 95 500 1",
+      "button 70 120 2103 2104 1 0 2",
+      "text 90 115 500 2",
+      "button 70 140 2103 2104 1 0 3",
+      "text 90 135 500 3",
+      "button 70 160 2103 2104 1 0 4",
+      "text 90 155 500 4",
+      "button 70 180 2103 2104 1 0 5",
+      "text 90 175 500 5",
+      "button 70 200 2103 2104 1 0 6",
+      "text 90 195 500 6",
+      "button 70 220 2103 2104 1 0 7",
+      "text 90 215 500 7",
+      "button 70 240 2103 2104 1 0 8",
+      "text 90 235 500 8",
+      "button 70 260 2103 2104 1 0 9",
+      "text 90 255 500 9",
+      "button 70 280 2103 2104 1 0 10",
+      "text 90 275 500 10",
+      "button 70 300 2103 2104 1 0 11",
+      "text 90 295 500 11",
+      "button 70 320 2103 2104 1 0 12",
+      "text 90 315 500 12",
+      "button 70 340 2103 2104 1 0 13",
+      "text 90 335 500 13",
+      "button 70 360 2103 2104 1 0 14",
+      "text 90 355 500 14",
+      "button 70 380 2103 2104 1 0 15",
+      "text 90 375 500 15",
+      "button 70 400 2103 2104 1 0 16",
+      "text 90 395 500 16",
+      "button 70 420 2103 2104 1 0 17",
+      "text 90 415 500 17",
+      "gumppic 250 85 96",
+      "gumppic 280 85 96",
+      "button 260 100 2103 2104 1 1 18",
+      "text 280 95 500 18",
+      "button 260 120 2103 2104 1 1 19",
+      "text 280 115 500 19",
+      "button 260 140 2103 2104 1 1 20",
+      "text 280 135 500 20",
+      "button 260 160 2103 2104 1 1 21",
+      "text 280 155 500 21",
+      "button 260 180 2103 2104 1 1 22",
+      "text 280 175 500 22",
+      "button 260 200 2103 2104 1 1 23",
+      "text 280 195 500 23",
+      "button 260 220 2103 2104 1 1 24",
+      "text 280 215 500 24",
+      "button 260 240 2103 2104 1 1 25",
+      "text 280 235 500 25",
+      "button 260 260 2103 2104 1 1 26",
+      "text 280 255 500 26",
+      "button 260 280 2103 2104 1 1 27",
+      "text 280 275 500 27",
+      "button 260 300 2103 2104 1 1 28",
+      "text 280 295 500 28",
+      "button 260 320 2103 2104 1 1 29",
+      "text 280 315 500 29",
+      "button 260 340 2103 2104 1 1 30",
+      "text 280 335 500 30",
+      "button 260 360 2103 2104 1 1 31",
+      "text 280 355 500 31",
+      "button 260 380 2103 2104 1 1 32",
+      "text 280 375 500 32",
+      "button 260 400 2103 2104 1 1 33",
+      "text 280 395 500 33",
+      
+      "button 360 100 2103 2104 1 1 34",
+      "text 380 95 500 34",
+      "button 360 120 2103 2104 1 1 35",
+      "text 380 115 500 35",
+      "button 235 440 2121 2120 1 0 0"
+   );
+		
+   var data := array(
+      "escolha sua açao:",
+      "1. Ah",
+      "2. Ahha",
+      "3. Aplaudir",
+      "4. Assoar o nariz",
+      "5. Comemorar",
+      "6. Limpar a Garganta",
+      "7. Tossir",
+      "8. Tossir2",
+      "9. Chorar",
+      "10. Arfar",
+      "11. Risadinha",
+      "12. Gemer",
+      "13. Rosnar",
+      "14. Hey",
+      "15. Soluçar",
+      "16. Huh?",
+      "17. Beijar",
+      "18. Rir",
+      "19. No",
+      "20. Oh",
+      "21. Oooh",
+      "22. Oops",
+      "23. Gritar",
+      "24. SHHH!",
+      "25. Suspirar",
+      "26. Espirrar",
+      "27. Sniff",
+      "28. Roncar",
+      "29. Cuspir",
+      "30. Assobiar",
+      "31. Bocejar",
+      "32. Yeah",
+      "33. Gritar",
+      "34. Vomitar",
+      "35. Arrotar"
+   );
+
+	var input  := array;
+
+	var delay       := 1;
+	var repeatcount := 1;
+	var repeatflag  := 0;
+
+	if (!text)
+      input := SendDialogGump( who, layout, data );
+      if ( input[0] == 0 )
+            SendSysMessage(who, "Cancelado.");
+            return;
+      endif
+
+      var i;
+
+      for (i := 1; i <= 35; i+=1)
+         if (input[i])
+            PlayCustomSound(who, i);
+         endif
+      endfor
+	else
+      text := cint(text);
+      PlayCustomSound(who, text);
+   endif
+
+endprogram

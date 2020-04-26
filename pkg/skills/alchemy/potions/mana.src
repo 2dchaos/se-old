@@ -1,0 +1,54 @@
+use os;
+use uo;
+use util;
+use cfgfile;
+use vitals;
+use attributes;
+include ":alchemy:alchemy";
+include ":attributes:attributes";
+include ":timedscripts:timedScripts";
+include "include/say";
+
+program drink_blue (who, potion)
+	EraseObjProperty(who, "IsMeditating");
+	EraseObjProperty(who, "HealTimer");
+	if(!Accessible(who, potion))
+		return;
+	endif
+	if(potion.movable == 0)
+		SendSysMessageEx(who, "Você não pode beber isto.", SSM_FAIL);
+		return;
+	endif
+
+	if ( TS_GetCooldown(who, "manapot") != error)
+		SendSysMEssageEx(who, "Você não pode usar essa pocao agora.", SSM_FAIL);
+		return 1;
+	endif
+	if (cint(GetObjProperty(who, "#manapotion")))
+		SendSysMessageEx(who, "Você ja esta sob efeito de uma pocao igual.", SSM_FAIL);
+		return;
+	endif
+
+	var obj := potion.objtype;
+
+	var healed;
+	case (potion.objtype)
+		0xbf17: healed := RandomDiceRoll("8d4+15");
+		0xbf18: healed := RandomDiceRoll("10d4+30");
+		0xbf19: healed := RandomDiceRoll("15d4+45");
+	endcase
+
+  	EmptyBottle(who, potion, 1);
+	TS_StartCooldown(who, "manapot", cint(healed)+1);
+	SetObjProperty(who, "#manapotion", 1);
+	Detach();
+   for i := 1 to healed
+		HealMana(who, 1);
+		sleepms(500);
+	endfor
+
+	EraseObjProperty(who, "#manapotion");
+	SendSysMessageEx(who, "Terminou o efeito da pocao.", SSM_INFO);	
+endprogram
+ 
+ 

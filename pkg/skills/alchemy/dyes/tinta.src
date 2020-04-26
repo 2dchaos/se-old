@@ -1,0 +1,31 @@
+use uo;
+use util;
+use cfgfile;
+
+include "include/say";
+
+const UOBJ_EMPTY_BOTTLE := 0x0f0e;
+
+program potionColor(who, potion)
+  if(!Accessible(who, potion))
+    return;
+  elseif(potion.movable == 0)
+    SendSysMessageEx(who, "Você não pode usar isto.");
+    return;
+  endif
+
+  SendSysMessageEx(who, "Escolha o balde de tintas", SSM_REQUEST);
+  var what := Target(who, TGTOPT_CHECK_LOS);
+  if (!what)
+    SendSysMessageEx(who, "Cancelado");
+    return;
+  elseif (what.objtype != 0x0FAB)
+    SendSysMessageEx(who, "Você precisa usar no balde de tintas");
+    return;
+  endif
+
+  what.color := potion.color;
+  SetObjProperty(what, "cargas", 6);
+  DestroyItem(potion);
+  CreateItemInBackpack(who, UOBJ_EMPTY_BOTTLE, 1);
+endprogram

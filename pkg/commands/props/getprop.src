@@ -1,0 +1,21 @@
+//
+// getprop.src
+//
+// Show information on a mob/items members
+//
+// Austin
+// Created: 9/24/2001 11:25AM
+// Updated: 9/24/2001 11:25AM
+//
+
+use uo;
+include "include/say";
+
+program propertyinfo(who, property)
+	var targ := target(who, TGTOPT_NOCHECK_LOS);
+	if ( !targ )
+		SendSysMessage(who, "Cancelled");
+		return;
+	endif
+	SendSysMessageEx(who, "Property "+property+": "+targ.get_member(property), SSM_INFO);
+endprogram

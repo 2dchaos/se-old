@@ -1,0 +1,39 @@
+use uo;
+use cfgfile;
+
+include "include/say";
+include ":dyes:dyes";
+
+program UseTub(mobile, dyetub)
+	if( !ReserveItem(dyetub) )
+		SendSysMessageEx(mobile, "That dye tub is aleady in use.");
+		return 0;
+	endif
+
+	SendSysMessageEx(mobile, "Onde deseja usar isso?");
+	var targ := target(mobile);
+
+	if ( !targ )
+		SendSysMessageEx(mobile, "Cancelled");
+		return;
+	elseif( !ReserveItem(targ) )
+		SendSysMessageEx(mobile, "Isso já está em uso.");
+		return 0;
+	endif
+
+	if ( CanDye(targ) || mobile.cmdlevel )
+		PlaySoundEffect(mobile, 0x23F);
+		targ.color := dyetub.color;
+		
+		if (GetObjProperty(dyetub, "cargas"))
+			SetObjProperty(dyetub, "cargas", GetObjProperty(dyetub, "cargas")-1);
+			if (GetObjProperty(dyetub, "cargas") <= 0)
+				dyetub.color := 0;
+			endif
+		endif
+		
+	else
+		SendSysMessageEx(mobile, "Você não pode colorir isso.");
+	endif
+
+endprogram

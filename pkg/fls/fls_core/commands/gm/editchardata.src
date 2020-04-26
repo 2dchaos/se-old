@@ -1,0 +1,131 @@
+/*===============================================================
+* FLS - PLAYERS COMMAND
+===============================================================*/
+
+use uo;
+use vitals;
+use os;
+use util;
+
+include ":gumps:include/gumps";
+include ":gumps:include/gumps_ex";
+include ":datafile:datafile";
+include ":attributes:attributes";
+include ":tn:tngumps";
+
+const BTN_CHANGE_RACE := 11;
+const BTN_CHANGE_CORPSE := 13;
+const BTN_CHANGE_LEVELUP := 14;
+const BTN_CHANGE_FEAT := 15;
+const BTN_CHANGE_HITS := 16;
+const BTN_CHANGE_MANA := 17;
+
+program command_Message(who)
+	var targ;
+   if (who.cmdlevel > 4)
+      targ := target(who);
+   endif
+
+	if (!targ || !targ.ISA(POLCLASS_MOBILE))
+		targ := who;
+	endif
+
+	while (1)
+		var gump := GFCreateGump();
+		GFResizePic(gump, 84, 90, 9260, 280, 260);
+
+		GFGumpPicTiled(gump, 100,100,30,235,10460);
+		GFGumpPicTiled(gump, 320,100,30,235,10460);
+		// GFGumpPicTiled(gump, 80,88,463,16,10100);
+		// GFGumpPicTiled(gump, 84,610,457,16,10100);
+		
+		var chardata := GetObjProperty(targ, "chardata");
+		if (!chardata)
+			var chardata := struct{ "level" := 1, "raca" := "", "Feats" := array{}};
+		endif
+
+      var y := 120;
+		GFTextLine(gump, 170, y, 2100, "Raça:");
+		GFTextLine(gump, 220, y, 2103, "{}".format(chardata.raca));
+      GFAddButton(gump, 150, y+3, 0x845, 0x846, GF_CLOSE_BTN, BTN_CHANGE_RACE);
+      y+= 20;
+		GFTextLine(gump, 170, y, 2100, "Vida:");
+		GFTextLine(gump, 220, y, 2103, "{}".format(cint(chardata.hitpoints)));
+      GFAddButton(gump, 150, y+3, 0x845, 0x846, GF_CLOSE_BTN, BTN_CHANGE_HITS);
+      y+= 20;
+		GFTextLine(gump, 170, y, 2100, "Mana:");
+		GFTextLine(gump, 220, y, 2103, "{}".format(cint(chardata.manapoints)));
+      GFAddButton(gump, 150, y+3, 0x845, 0x846, GF_CLOSE_BTN, BTN_CHANGE_MANA);
+      y+= 30;
+      GFAddButton(gump, 172, y, 0x80E, 0x80E, GF_CLOSE_BTN, BTN_CHANGE_CORPSE);
+		GFHTMLArea(gump,  170, y, 115, 25, "<basefont color=#7FFFD4><center>Mudar Aparência", 1);
+      y+= 30;
+      GFAddButton(gump, 172, y, 0x80E, 0x80E, GF_CLOSE_BTN, BTN_CHANGE_LEVELUP);
+		GFHTMLArea(gump,  170, y, 115, 25, "<basefont color=#7FFFD4><center>Subir Level", 1);
+      y+= 30;
+      GFAddButton(gump, 172, y, 0x80E, 0x80E, GF_CLOSE_BTN, BTN_CHANGE_FEAT);
+		GFHTMLArea(gump,  170, y, 115, 25, "<basefont color=#7FFFD4><center>Adquirir Talento", 1);
+      
+		var input := GFSendGump(who, gump);
+		input := input[0];
+
+      var output := handleInput(who, input, chardata);
+
+		SetObjProperty(targ, "chardata", chardata);
+		if (output) return; endif;
+	endwhile
+endprogram
+
+function handleInput(who, input, byref chardata)
+   case (input)
+      BTN_CHANGE_RACE:
+         var raca := RadioGump(who, 180, 190, "Qual raça deseja escolher?", array{"Humano", "Meio-Elfo", "Elfo", "Remover"});
+         if (raca == "Remover")
+            chardata.erase("raca");
+            return;
+         endif
+         chardata.raca := raca;
+         SetName(who, who.name);
+         return;
+      BTN_CHANGE_HITS:
+         var hitpoints := cint(RequestInput(who, who.backpack, "Escreva o número de vida extra"));
+         chardata.hitpoints := hitpoints;
+         sleepms(300);
+         RecalcVitals(who);
+         return;
+      BTN_CHANGE_MANA:
+         var manapoints := cint(RequestInput(who, who.backpack, "Escreva o número de mana extra"));
+         chardata.manapoints := manapoints;
+         sleepms(300);
+         RecalcVitals(who);
+         return;
+      BTN_CHANGE_CORPSE:
+         var sexo := RadioGump(who, 180, 160, "Qual sexo deseja escolher?", array{"Homem", "Mulher"});
+         if (sexo == "Homem")
+            if (chardata.raca == "Humano")
+               who.graphic 	:= 400;
+               who.trueobjtype := 400;
+            else
+               who.graphic 	:= 605;
+               who.trueobjtype := 605;
+            endif
+            who.gender := 0;
+         else
+            if (chardata.raca == "Humano")
+               who.graphic 	:= 401;
+               who.trueobjtype := 401;
+            else
+               who.graphic 	:= 606;
+               who.trueobjtype := 606;
+            endif
+            who.gender := 1;
+         endif
+         Start_Script(":disguise:commands/gm/editlook", who);
+         return;
+      BTN_CHANGE_LEVELUP:
+         Start_Script(":fls_core:commands/gm/uplevel", who);
+         return;
+      BTN_CHANGE_FEAT:
+      default: return 1;
+   endcase
+endfunction

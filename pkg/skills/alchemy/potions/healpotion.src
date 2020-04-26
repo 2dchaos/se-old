@@ -1,0 +1,36 @@
+use os;
+use uo;
+use util;
+use cfgfile;
+use vitals;
+use attributes;
+include ":alchemy:alchemy";
+include "include/say";
+include ":timedscripts:timedScripts";
+include "include/damage";
+
+program healpotion(who, potion)
+	if (!CheckIfCanDrink(who, potion, "healingpot", 10))
+		return 1;
+	endif
+
+	var healed;
+	case (cint(potion.objtype))
+		56322: healed := RandomDiceRoll("8d4+15"); //maior
+		56323: healed := RandomDiceRoll("10d4+30"); //superior
+		48914: healed := RandomDiceRoll("15d4+45"); //suprema
+		default: healed := RandomDiceRoll("3d4+15");
+	endcase
+
+  	EmptyBottle(who, potion, 1);
+	Detach();
+
+	SendSysMessageEx(who, "Seus ferimentos estao cicatrizando...", SSM_INFO);
+	for i := 0 to cint(healed)
+		HealFLS(who, 1, 0);
+		//HealDamage(who,  1 );
+		sleepms(300);
+	endfor
+	SendSysMessageEx(who, "Terminou o efeito da pocao.", SSM_INFO);
+endprogram
+ 

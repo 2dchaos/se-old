@@ -1,0 +1,37 @@
+use uo;
+use util;
+
+include ":tn:tngumps";
+include "include/say";
+include ":combat:combat";
+
+program dblclick(who, item)
+   var template    := GetObjProperty(item, "npctemplate");
+   var brokengraph := GetObjProperty(item, "brokengraph");
+   var nmonsters   := GetObjProperty(item, "nmonsters");
+   var broke       := GetObjProperty(item, "origingraph");
+
+   if (who.warmode && !broke && (Distance(who, item) <= 1 || who.weapon.isBow() || who.weapon.isMagicWeapon()))
+      PrintText(who, "*Atacou {}*".format(item.name));
+      PlayAttackAnimation(who, who.weapon);
+      item.MakeSpawn();
+      return;
+   endif
+
+   if (who.cmdlevel)
+      if (!template) template := ":ghaia:"; endif
+      if (!brokengraph) brokengraph := "0"; endif
+      if (!nmonsters) nmonsters := "1d2"; endif
+      var input_list := array{};
+      input_list.append(struct{ "title" := "Escolha o npctemplate", "marked" := template});
+      input_list.append(struct{ "title" := "Escolha o gráfico quebrado", "marked" := brokengraph});
+      input_list.append(struct{ "title" := "Quantos monstros deseja spawnar?", "marked" := nmonsters});
+      var output := QuestionsGump(who, input_list);
+      if (!output) return; endif
+      
+      SetObjProperty(item, "npctemplate", output[1]);
+      SetObjProperty(item, "brokengraph", output[2]);
+      SetObjProperty(item, "nmonsters", output[3]);
+      item.ResetSpawn();
+   endif
+endprogram

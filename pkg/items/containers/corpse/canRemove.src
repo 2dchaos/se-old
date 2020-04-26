@@ -1,0 +1,34 @@
+//$Id: canRemove.src 386 2005-10-03 00:22:39Z muaddiblsd $
+
+use uo;
+include ":attributes:attributes";
+
+program canRemove(character, container, item, move_type)
+	if (container.ownerserial == character.serial)
+		return 1;
+	elseif (!maoLivre(character, 1))
+		return 0;
+	elseif (character.frozen || character.paralyzed)
+		SendSysMessage(character, "Você esta paralizado.");
+		return 0;
+	endif
+
+   if (TS_GetCooldown(character, "container_remove"))
+      SendSysMessageEx(character, "Aguarde alguns segundos entre cada item que você retira do corpo.", SSM_FAIL);
+      return 0;
+   endif
+
+   if (!character.cmdlevel)
+      var mobiles_near := ListMobilesNearLocationEx(container.x, container.y, LIST_IGNORE_Z, 5, LISTEX_FLAG_PLAYERS_ONLY|LISTEX_FLAG_NORMAL);
+      if (mobiles_near.size() > 1)
+      TS_StartCooldown(character, "container_remove", 3);
+      endif
+   endif
+
+	var mods := GetObjProperty(item, "equip");
+	if ("cursed" in (mods.keys()) && GetObjProperty(item, "EquippedOn") == container.ownerserial)
+		SendSysMessage(character, "Este item parece estar preso ao personagem");
+		return 0;
+	endif	
+	return 1;
+endprogram

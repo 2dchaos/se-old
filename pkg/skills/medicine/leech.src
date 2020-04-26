@@ -1,0 +1,37 @@
+use uo;
+use os;
+
+include "include/client";
+include "include/say";
+include ":attributes:attributes";
+include ":timedscripts:timedScripts";
+include ":timedscripts:poisonUtil";
+include ":charactercreation:feats";
+
+program UseLeech(who, leech)
+	SendSysMessageEx(who, "Em quem você deseja usar isto?");
+	var targ := target(who);
+	
+	if ( !targ.acctname )
+		SendSysMessageEx(who, "Cancelado");
+		return;
+	elseif ( !targ.poisoned )
+		SendSysMessageEx(who, targ.name+" não esta envenenado.");
+		return;
+	elseif ( Distance(who, targ) > 2 )
+		SendSysMessageEx(who, targ.name+" esta muito distante.");
+		return;
+	endif
+
+	var test := rollAttrDice(who, WISDOM) + GetSkillBonus(who, PRIMEIROS_SOCORROS);
+
+	if ( test > 13 )
+		who.SetAchievement("leech", 1);
+		SendSysMessageEx(who, "Você aplicou a sanguessuga em "+targ.name);
+		TS_CurePoison(targ, Floor(test/3), "P", 1);
+	else
+		SendSysMessageEx(who, "As sanguessugas parecem fazer pouco efeito em "+targ.name);
+	endif
+	
+	SubtractAmount(leech, 1);
+endprogram

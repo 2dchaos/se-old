@@ -1,0 +1,17 @@
+use uo;
+use os;
+include ":attributes:attributes";
+
+program DestroyMe(spawnpoint)
+    var gm_flag := GetObjProperty(spawnpoint,"GM_FLAG");
+    if (!gm_flag)
+        return 0;
+    endif
+    
+    spawnpoint.KillAll();
+
+    var mydata := spawnpoint.GetProps();
+    var spot   := SystemFindObjectBySerial(mydata.spot_serial);
+    spot.RemoveSpawnPoint(spawnpoint.serial);
+    return 1;
+endprogram

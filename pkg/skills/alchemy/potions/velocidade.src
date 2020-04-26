@@ -1,0 +1,14 @@
+use os;
+use uo;
+use util;
+use cfgfile;
+include ":alchemy:alchemy";
+
+program drink_blue (who, potion)
+	if(!checkifcandrink(who, potion, "velocidade", 0))
+		return;
+	endif
+	EmptyBottle(who, potion);
+	var bonus := cint(GetObjProperty(potion, "crafterskill"));
+	TS_StartTimer(who, "velocidade", 8, 20); 
+endprogram

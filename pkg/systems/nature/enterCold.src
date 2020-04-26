@@ -1,0 +1,17 @@
+
+use uo;
+use os;
+use vitals;
+
+include "include/damage";
+
+program neve(who, regioname)
+
+	
+	start_script(":nature:coldeffect", {who} );
+
+/*
+*/
+endprogram
+
+

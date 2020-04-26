@@ -1,0 +1,19 @@
+/*
+ * $Id: destroy.src 87 2006-05-23 19:04:43Z sroyalty $
+ *
+ */
+
+use uo;
+
+
+program textcmd_Destroy(who)
+	SendSysMessage(who, "What do you want to destroy?");
+
+   var targ := Target(who, TGTOPT_NOCHECK_LOS);
+   if (GetObjProperty(targ, "CANT_DESTROY"))
+	   SendSysMessage(who, "Can't destroy that in this way");
+      return;
+   endif
+   
+	DestroyItem(targ);
+endprogram

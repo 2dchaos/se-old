@@ -1,0 +1,38 @@
+
+use uo;
+use os;
+use polsys;
+use unicode;
+use util;
+
+include ":attributes:attributes";
+include "include/client";
+include "include/say";
+
+program placeItems()
+  Print( "Hooking Item Place..." );
+  return 1;
+endprogram
+
+exported function HandlePlaceItem( who, byref packet )
+   SetobjProperty(who, "#placed_item", packet.GetInt32(1));
+   // // SystemFindObjectBySerial(packet.GetInt32(4));
+   packet := packet;
+
+	return 0;
+endfunction
+
+exported function HandleApprovedPlaceItem( who, byref packet )
+   packet := packet;
+   var item_serial := GetObjProperty(who, "#placed_item");
+   var item := SystemFindObjectBySerial(item_serial);
+
+   if (!item.container)
+      foreach item_ref in (ListItemsAtLocation( item.x, item.y, item.z, item.realm))
+         SendEvent(item_ref, struct{ item := item, type := EVID_ITEM_PLACED, source := who });
+         sleepms(2);
+      endforeach
+   endif
+
+	return 0;
+endfunction

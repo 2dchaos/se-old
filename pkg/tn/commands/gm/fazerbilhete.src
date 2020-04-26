@@ -1,0 +1,133 @@
+use uo;
+use boat;
+include ":gumps:yesno";
+include ":tn:tngumps";
+include "include/say";
+
+program setpins(who)
+	SendSysMEssageEx(who, "Escolha o tilerman.");
+	var tillerman := target(who);
+   if (!tillerman) return; endif
+	//sendsysmessage(who, );
+	var viagens := GetObjProperty(tillerman, "viagem");
+   if (!viagens)
+      viagens := array;
+   endif
+
+   var routes := array{};
+   foreach r in viagens
+      routes.append("{} [C. {}]".format(r.name, r.cost));
+      sleepms(2);
+   endforeach
+
+   routes.append("Nova Rota");
+   routes.append("Retornar a ponto de origem");
+   routes.append("Cancelar");
+
+   var cancel_choice := routes.size();
+   var new_choice := routes.size()-2;
+   var return_boat := routes.size()-1;
+
+   var request := RadioGump(who, 260, 0, "Escolha qual rota deseja alterar.", routes, 1);
+   if (request == cancel_choice)
+      return 1;
+   elseif (request == return_boat)
+      var boat := tillerman.multi;
+      var plots := GetObjProperty(tillerman, "back_course");
+      if (plots)
+         var pos := plots[plots.size()];
+         MoveBoatXY(boat, pos.x, pos.y);
+      endif
+   elseif (request == new_choice)
+      var dest := struct{ "plots" := array{} };
+      dest.+name := GetInput(who, tillerman, "Escreva o nome do destino da viagem: (Esc para cancelar)");
+      if (!dest.name) return; endif
+      dest.+cost  := cint(GetInput(who, tillerman, "Quanto vai custar a viagem?"));
+      if (!dest.cost) return; endif
+      dest.+plots := array{};
+      setPlots(who, tillerman, dest.plots);
+		viagens.append(dest);
+	   SetObjProperty(tillerman, "viagem", viagens);
+      SendsysMessageEx(who, "Rota adicionada", SSM_INFO);
+   else
+      var choice := RadioGump(who, 0, 0, "O que deseja fazer?", array{"Alterar Preço", "Alterar Rota", "Alterar Nome", "Fazer barco auto-seguir essa rota", "Remover", "Cancelar"}, 1);
+
+      if (choice == 5) // remove
+         viagens.Erase(request);
+	      SetObjProperty(tillerman, "viagem", viagens);
+         SendsysMessageEx(who, "Rota removida", SSM_FAIL);
+      elseif (choice == 1)
+         viagens[request].cost := cint(GetInput(who, tillerman, "Quanto vai custar a viagem?"));
+         if (viagens[request].cost)
+            SetObjProperty(tillerman, "viagem", viagens);
+            SendsysMessageEx(who, "Rota alterada", SSM_INFO);
+         endif
+      elseif (choice == 3)
+         viagens[request].name := GetInput(who, tillerman, "Escreva o nome do destino da viagem: (Esc para cancelar)");
+         if (viagens[request].name)
+            SetObjProperty(tillerman, "viagem", viagens);
+         SendsysMessageEx(who, "Rota alterada", SSM_INFO);
+         endif
+      elseif (choice == 2)
+         while (who.connected)
+            var route_array := array{};
+            foreach p in (viagens[request].plots)
+               route_array.append("x{} y{}".format(p.x, p.y));
+               sleepms(2);
+            endforeach
+            route_array.append("Novo Ponto");
+            route_array.append("Cancelar");
+            var route := RadioGump(who, 0, 0, "Qual rota deseja alterar?", route_array, 1);
+            if (route == route_array.size())
+               return;
+            elseif (route == route_array.size()-1)
+               var plot := GetInput(who, tillerman, "Escreva o X Y e P do mapa. (Esc para cancelar)");
+               if (!plot) return; endif;
+               plot := splitwords(plot);
+
+               var plotinfo := struct;
+               plotinfo.+x := plot[1];
+               plotinfo.+y := plot[2];
+               plotinfo.+p := plot[3];
+
+               viagens[request].plots.append(plotinfo);
+            else
+               var select_opt := RadioGump(who, 0, 0, "O que deseja fazer?", array{"Alterar", "Remover", "Cancelar"}, 1);
+               if (select_opt == 1)
+                  var plot := GetInput(who, tillerman, "Escreva o X Y e P do mapa. (Esc para cancelar)");
+                  if (!plot) return; endif;
+                  plot := splitwords(plot);
+
+                  var plotinfo := struct;
+                  plotinfo.+x := plot[1];
+                  plotinfo.+y := plot[2];
+                  plotinfo.+p := plot[3];
+                  viagens[request].plots[route] := plotinfo;
+               elseif (select_opt == 2)
+                  viagens[request].plots.Erase(route);
+               endif
+            endif
+            
+            SetObjProperty(tillerman, "viagem", viagens);
+            SendsysMessageEx(who, "Rota alterada", SSM_INFO);
+         endwhile
+      elseif (choice == 4)
+         SetObjProperty(tillerman, "always_travel", request);
+      endif
+   endif
+endprogram
+
+function setPlots(who, tillerman, byref plots)
+   while(who.connected)
+      var plot := GetInput(who, tillerman, "Escreva o X Y e P do mapa. (Esc para cancelar)");
+      if (!plot) break; endif;
+      plot := splitwords(plot);
+
+      var plotinfo := struct;
+      plotinfo.+x := plot[1];
+      plotinfo.+y := plot[2];
+      plotinfo.+p := plot[3];
+
+      plots.append(plotinfo);
+   endwhile
+endfunction

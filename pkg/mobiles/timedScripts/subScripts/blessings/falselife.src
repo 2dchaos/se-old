@@ -1,0 +1,60 @@
+/* $Id: alcohol.src 87 2006-05-23 19:04:43Z sroyalty $
+ *
+ */
+
+use uo;
+use os;
+use util;
+
+include "include/client";
+include ":timedscripts:timedScripts";
+include "include/say";
+include ":attributes:attributes";
+
+set_script_option(SCRIPTOPT_CAN_ACCESS_OFFLINE_MOBILES, 1);
+
+function StartScript(mobile, attacker := 0, level := 0)
+   var heal := 0;
+   if (AP_GetVital(mobile, HITS) >= AP_GetVitalMaximumValue(mobile, HITS))
+      heal := 1;
+   endif
+
+   var hitsmod := cint(GetObjProperty(mobile, "hitsmod"));
+   hitsmod += (level*5);
+   SetObjProperty(mobile, "hitsmod", hitsmod);
+   SendSysmessageEx(mobile, "Você sente seu sangue esquentar!", SSM_HARMFUL);
+   RecalcVitals(mobile, RECALC_NO_INTRINSIC_MOD);
+   if (heal)   
+      AP_SetVital(mobile, HITS, AP_GetVitalMaximumValue(mobile, HITS));
+   endif
+   return 1;
+endfunction
+
+function EndScript(mobile, level)
+   var hitsmod := cint(GetObjProperty(mobile, "hitsmod"));
+   hitsmod -= (level * 5);
+
+   if (hitsmod <= 0)
+      EraseObjProperty(mobile, "hitsmod");
+   else
+      SetObjProperty(mobile, "hitsmod", hitsmod);
+   endif
+   RecalcVitals(mobile, RECALC_NO_INTRINSIC_MOD);
+   return 1;
+endfunction
+
+program TimedScriptInit(params)
+	var mobile := params[1];
+	var type   := params[2];
+	var level  := params[3];
+
+   if (typeof(type) == "String")
+      if (type == "End")
+         return EndScript(mobile, level);
+      elseif (type == "LogOff")
+         return;
+      endif
+   endif
+
+   return StartScript(mobile, type, level);
+endprogram

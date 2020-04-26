@@ -1,0 +1,212 @@
+['Dynamic Events States']
+'Active'      – The event is running now
+'Success'     – The event has succeeded. During this state NPCs may have different dialogs and offer certain services. And the following events of a chain of events may start within a few seconds.
+'Fail'        – The event has failed
+'Ready'       – The event is inactive, and will only become active once certain criteria are met. Such as talking to an NPC.
+'Preparation' - The event criterias are done, and the events is performing all the necessary changes to get activated. 
+
+['Essentials']
+The foremost requirement of an event is being in the right place at the right time. Events can be discovered in a number of ways, such as exploring the world, conversing with non-player characters.
+/**
+ * TODO: How should calculate if player is in the right place to start an event
+ * Possible way is to check every player in shard, verify if X and Y is inside the area event trigger.
+ *
+ */
+
+['Scalling Event']
+Event can be scalled by the number of players inside the area of the Event.
+
+[1]Enemy stats can be increased
+[2]Enemies can gain new abilities
+[3]New enemy types may appear, including veterans, elites, or even champion versions
+[4]Enemy count can be increased
+[5]Objective requirements may increase
+
+['Scripting Details']
+CFG ->
+   [eventname]
+      events ->
+         CanDo:
+            Summon Mobs
+               What mob?
+                  template
+                  spawngroup
+                  
+               Where?
+                  At location
+                  Random Location around
+
+               Run To a location?
+                  Kill after running?
+                     If no players around?
+               
+            CreateItem
+               Where?
+                  At Location
+                  At Container
+               How many?
+
+            Change Enviroment
+               Where?
+                  Around
+                  Regions
+                  World
+
+            DestroyItem
+               What Item?
+
+         Trigger Conditions:
+            x Minimum Enemys
+               at point
+               around
+            x mobs died
+            boss died
+            Every x seconds
+            Battle started around
+            Chance of happen %?
+            Class between enemies
+         
+    
+function DoStepsList(who, event_type)
+   var input_request := array{};
+   var events := array{};
+   case (event_type)
+      event_options[1]: // summon
+         input_request.append(struct{ "title" := "Mobile template", "checked" := ":ghaia:" });
+         input_request.append(struct{ "title" := "Mover-se até algum local?", "checked" := 1, "option" := array{"Sim", "Não"} });
+         // input_request.append(struct{ "title" := "Matar somente se não houver players?", "checked" := 1, "option" := array{"Sim", "Não"} });
+         input_request.append(struct{ "title" := "Método de Respawn", "checked" := 1, "option" := array{"Escolher um local", "Vários locais"} });
+         var input := QuestionsGump(who, input_request);
+
+         SendSysMessageEx(who, "Spawnar onde? (Esc to cancel)");
+         var loc := ChooseLocation(who, ((input_request[3])["Vários"]) != 0);
+         foreach location in loc
+            events.append(struct{ "location" := location});
+         endforeach
+         
+         events.append(struct{ "template" := input_request[1]});
+         if (input_request[1])
+            SendSysMessageEx(who, "Andar até onde? (Esc to cancel)");
+            loc := ChooseLocation(who);
+            foreach location in loc
+               events.append(struct{ "go_to" := location});
+            endforeach
+         endif
+
+         return events;
+      event_options[2]: //create item
+         // do nothing
+         return events;
+      event_options[3]:  //change environment
+         return events;
+      event_options[4]: // destroyitem
+         return events;
+      event_options[5]:  //applytimed
+         var timedcfg := TS_GetCfgFile();
+         input_request.append(struct{ "title" := "Escolha um TimedScript", "checked" := 1, "option" := GetConfigStringKeys(timedcfg) });
+         input_request.append(struct{ "title" := "Teste de dificuldade?," "checked" := 1, "option" :=  array{STRENGTH, INTELLIGENCE, DEXTERITY, CONSTITUTION, WISDOM} });
+         input_request.append(struct{ "title" := "Dificuldade do teste"});
+         input_request.append(struct{ "title" := "Enviar mensagem ao ativar? [deixar em branco se não]"});
+         var input := QuestionsGump(who, input_request);
+
+         SendSysMessageEx(who, "Escolha o local (Esc to cancel)");
+         var loc := ChooseLocation(who);
+
+         return events;
+
+      condition_options[1]: //minimum player
+         input_request.append(struct{ "title" := "Quantos players próximo?"});
+         input_request.append(struct{ "title" := "Próximo do que?", "checked" := 1, "option" := array{"Spawnpoint", "Escolher local"}});
+         var input := QuestionsGump(who, input_request);
+      
+         if (input[2] != "Spawnpoint")
+            var loc := ChooseLocation(who);
+         else
+         
+         endif
+         return events;
+      condition_options[2]: //mobiles died
+         input_request.append(struct{ "title" := "Quantos monstros? [0 para todos]", "checked" := "0"});
+         var input := QuestionsGump(who, input_request);
+         return events;
+      condition_options[3]: //boss died
+      condition_options[4]: //every second
+         input_request.append(struct{ "title" := "De quantos em quantos segundos?", "checked" := "120"});
+         var input := QuestionsGump(who, input_request);
+      
+      condition_options[5]: //battle started
+         input_request.append(struct{ "title" := "Ao redor do que?", "checked" := 1, "option" := array{"Spawnpoint", "Escolher local"}});
+         var input := QuestionsGump(who, input_request);
+      condition_options[6]: //% of chance
+         if (input[1] != "Spawnpoint")
+            SendSysMessageEx(who, "Escolha o local (Esc to cancel)");
+            var loc := ChooseLocation(who);
+         else
+         
+         endif
+         input_request.append(struct{ "title" := "Qual a % de chance?", "checked" := "100");
+         var input := QuestionsGump(who, input_request);
+         return events;
+      condition_options[7]: //player class
+         input_request.append(struct{ "title" := "Qual classe?", "checked" := 1, "option" := array{"Mago", "Clérigo", "Guerreiro", "Ladino"}});
+         var input := QuestionsGump(who, input_request);
+         return events;
+      condition_options[8]: //Light near
+         input_request.append(struct{ "title" := "Ao redor do que?", "checked" := 1, "option" := array{"Spawnpoint", "Escolher local"}});
+         var input := QuestionsGump(who, input_request);
+         if (input[1] != "Spawnpoint")
+            SendSysMessageEx(who, "Escolha o local (Esc to cancel)");
+            var loc := ChooseLocation(who);
+         else
+
+         endif
+         return events;
+   endcase
+
+   return 0;
+endfunction
+
+
+['Ready Script']
+
+
+/*=============================================
+=             Goblin Events Chain            =
+=============================================*/
+// Ritual of the Goblins
+"Description"    : Goblins reunites in a place [array(possible locations)] and starts a ritual to invoke an ancient elemental demon.
+"Enemies"        : Goblins and Goblin Shaman 
+"Scalling"       : [4][3] Goblin Warrior
+"Success"        : Kill all goblins in the area and prevent elemental demon to be summoned.
+"Fail"           : Active next Event ['Goblin Basement']
+"Active Criteria": Some Player should enter the Area
+"Cooldown"       : 1 Week and the chain should not be on
+
+// Goblin Basement
+"Description"    : Goblins take the place for a base. Some tents are placed around.
+"Enemies"        : Goblins, Goblin Warrior, Goblin Shaman, Elemental Demon Boss.
+"Scalling"       : [1]
+"Success"        : Kill Elemental Demon Boss.
+"Fail"           : Next Event ['Goblin Attack']
+"Active Criteria": Fail ['Ritual of the Goblins']
+
+// Goblin Attack
+"Description"    : Goblins starts to spawn around the cities.
+"Enemies"        : Goblins, Goblin Warrior
+"Scalling"       : [3] Goblin Champion
+"Success"        : Kill all enemis to put event to cooldown 
+"Fail"           : Not Possible to Fail.
+"Active Criteria": Fail ['Goblin Attack']
+"Cooldown"       : One day
+
+/*=============================================
+=             Bandits Event Chain            =
+=============================================*/
+// Bandits in the Street
+"Description"    : Bandits are summoned in [arraw(possible locations)] in streets, and attack near players.
+"Enemies"        : Bandits and Bandit Archers.
+"Scalling"       : [1]
+"Success"        : Kill all the bandits.
+"Fail"           : Bandits gone after a while
+"Active Criteria": Some Player should enter the Area
+"Cooldown"       : 2 days

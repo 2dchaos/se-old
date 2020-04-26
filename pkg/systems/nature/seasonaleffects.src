@@ -1,0 +1,32 @@
+
+use uo;
+use os;
+
+include ":fls_core:fls_characters";
+
+program seasonaleffects(params)
+	//sem efeitos das estacoes
+   sleep(1);
+	var who := params[1];
+	
+	var season := cint(getglobalproperty("season"));
+	if (!season)
+		season := 1;
+	endif
+	
+	if ( cint(GetGlobalProperty("desolation")) == 1)
+		season := 4;
+	endif
+	
+	if (who)
+		SendPacket(who, "BC0"+season+"01");
+	else
+		foreach player in enumerateonlinecharacters()
+			SendPacket(player, "BC0"+season+"01");
+		endforeach
+	endif
+
+   if (!ApplyElfLightLevel(who))
+		who.setlightlevel(0, 2);
+	endif
+endprogram

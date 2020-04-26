@@ -1,0 +1,130 @@
+use cfgfile;
+use uo;
+ include ":attributes:attributes";
+include "include/say";
+include ":timedscripts:timedScripts";
+include ":loot:magicLoot";
+//include "include/damage";
+
+
+program skill_armslore(who)
+
+	SendSysMessageEx(who, "Escolha um objeto para avaliar.", SSM_REQUEST);
+	var item := Target(who, TGTOPT_CHECK_LOS);
+
+	if (!item)
+		SendSysMEssageEx(who, "Cancelado.", SSM_FAIL);
+		return;
+	endif
+
+	if ( ! item.isa(POLCLASS_ITEM))
+		//SendSysMessageEx(who, "Este não e um alvo valido.", SSM_FAIL);
+		//return;
+		PrintText(who, "*analisando " + item.name + " *");
+		var timers := GetMagicTimersSpellName(item);
+		if ( 10 ) //skilcheck
+			if (timers.size() > 0)
+				SendSysMessageEx(who,  "O alvo esta sob efeito dos encantamentos: ", SSM_INFO);
+				foreach time in (timers)
+					SendSysMessageEx(who, " " + time.nome, SSM_INFO);
+				endforeach
+				return;
+			else
+				SendSysMessageEx(who, "O alvo não esta sob efeito de encantamentos.", SSM_INFO);
+				return;
+			endif
+		else
+			SendSysMessageEx(who, "Você não identifica nada.", SSM_FAIL);	
+			return;
+		endif
+	endif
+
+	if (item.graphic == 3849)
+		PrintText(who, "*analisando um frasco*");
+		if (10 > 0)  //skilcheck
+			var cfg := ReadConfigFile(":*:itemdesc");
+			var entry := cfg[item.objtype];
+			if (entry)
+				SetObjProperty(item, "pocaoname", entry.Type);
+				SendSysMessageEx(who, "Você identificou o liquido do frasco: " + entry.Type, SSM_INFO);
+			endif
+			cfg := 0;
+			entry := 0;
+			var whos := GetObjProperty(item, "magicwho");
+			if (whos == error)
+				whos := array;
+			endif
+			if ( !(who.serial in whos))
+				whos.append(who.serial) ;
+				SetObjProperty(item, "magicwho", whos);
+			endif
+			var backup := GetAmount(item);
+			SubtractAmount(item, backup-1);
+			SetName(item, item.desc);
+			AddAmount(item, backup-1);
+		else
+			SendSysMessageEx(who, "Você não esta certo..", SSM_FAIL);
+		endif
+	else
+		PrintText(who, "*analisando um item*");
+
+		if (10 > 0)  //skilcheck
+
+			var swordgem := cint(GetObjProperty(item, "gemtype"));
+			if (swordgem)
+				var cfg := ReadConfigFile(":magery:config/allspells");
+				var elem := FindConfigElem(cfg, swordgem);
+				var name := GetConfigString(elem, "Name");
+				SendSysMEssageEx(who, "Esta gema magica possui energia para: " + name, SSM_INFO);
+
+				SetObjProperty(item, "swordmage", name);
+				var whos := GetObjProperty(item, "magicwho");
+				if (whos == error)
+					whos := array;
+				endif
+				if ( !(who.serial in whos))
+					whos.append(who.serial) ;
+					SetObjProperty(item, "magicwho", whos);
+				endif
+				SetName(item, item.desc);
+
+				return 1;
+			endif
+
+			if (GetObjProperty(item, "magic") != error)
+				if (GetObjProperty(item, "equip"))
+					ActivateMagicItem(item);
+				endif
+				
+				SendSysMessageEx(who, "Você identificou encantamentos nesse item.", SSM_INFO);
+				var whos := GetObjProperty(item, "magicwho");
+				if (whos == error)
+					whos := array;
+				endif
+				if ( !(who.serial in whos))
+					whos.append(who.serial) ;
+					SetObjProperty(item, "magicwho", whos);
+				endif
+				var cfg := ReadConfigFile(":magery:config/allspells");
+				var elem := FindConfigElem(cfg, whos[1]);
+				var name := GetConfigString(elem, "Name");
+				if (name)
+					SetObjProperty(item, "swordmage", name);
+				endif
+				var backup := GetAmount(item);
+				SubtractAmount(item, backup-1);
+				SetName(item, item.desc);
+				AddAmount(item, backup-1);
+			else
+				SendSysMessageEx(who, "Este item não possui propriedades magicas a serem ativadas.", SSM_INFO);
+			endif
+		else
+			SendSysMessageEx(who, "Você não descobriu nada.", SSM_FAIL);
+		endif
+
+	endif
+		
+
+	
+
+endprogram 

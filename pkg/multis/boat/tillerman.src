@@ -1,0 +1,72 @@
+use os;
+use uo;
+
+include ":tn:tngumps";
+include ":gumps:yesno";
+include "include/say";
+
+program renameboat(you, tillerman)
+	if (GetObjProperty(tillerman, "viagem") != error && !GetObjProperty(tillerman, "course") && !GetObjProperty(tillerman, "always_travel") )
+		var destinos := GetObjProperty(tillerman, "viagem");
+		var options := array;
+		foreach dest in destinos
+         var plots := dest.plots;
+         var last_plot := plots[plots.size()];
+         if (CoordinateDistance(last_plot.x, last_plot.y, tillerman.x, tillerman.y) < 10)
+			   options.append(dest.name + " [" + dest.cost + " moedas]");
+         endif
+         sleepms(2);
+		endforeach
+      
+      if (options.size() < 1)
+         return;
+      endif
+      options.append("Cancelar");
+	
+		var destname := RadioGump(you, 350, 200, "Escolha o destino da viagem. ", options);
+		if (destname && destname != "Cancelar")
+			foreach dest in destinos
+				if (destname == (dest.name + " [" + dest.cost + " moedas]"))
+					SendSysMessageEx(you, "Você deve pagar " + dest.cost + " moedas por essa viagem.", SSM_REQUEST);
+					var moedas := Target(you);
+					if ( moedas.objtype == 0xeed)
+						if (moedas.amount >= cint(dest.cost))
+							if (!SubtractAmount(moedas, cint(dest.cost)))
+								PrintText(tillerman, "Você não tem moedas necessarias.");
+							endif
+						else
+							PrintText(tillerman, "Você não tem moedas necessarias.");
+							return;
+						endif
+					else
+						PrintText(tillerman, "Isso ai parece moeda pra você? Pra mim não.");
+						return;
+					endif
+					SetObjProperty(tillerman, "course", dest.plots);
+               var reverse_spot := dest.plots;
+               reverse_spot.Reverse();
+					SetObjProperty(tillerman, "back_course", reverse_spot);
+					PrintText(tillerman,"Viagem programada, iremos *partir* quando me ordenar!");
+				endif
+			endforeach
+		endif
+		return;
+	endif
+
+	if((GetObjProperty(tillerman,"owner") != you.serial) && (you.cmdlevel < 2))
+		//PrintTextAbove(tillerman,"Stop that, or I'll throw ye overboard!");
+		return;
+	endif
+
+	if (YesNo(you, "Deseja Mudar o Nome do Barco?"))
+		var boatname := RequestInput(you, tillerman, "Entre com um novo nome para o barco.(max 40 characters)");
+		if(boatname)
+			if(len(boatname) <= 40)
+				tillerman.name := boatname;
+				SendSysMessageEx(you, "Barco renomeado.");
+			else
+				SendSysMessageEx(you, "Excedeu o numero de caracteres.");
+			endif
+		endif
+	endif
+endprogram

@@ -1,0 +1,48 @@
+/* $Id: alcohol.src 87 2006-05-23 19:04:43Z sroyalty $
+ *
+ */
+
+use uo;
+use os;
+use util;
+
+include "include/client";
+include ":timedscripts:timedScripts";
+include "include/say";
+
+function StartScript(mobile, attacker := 0, level := 0)
+   var bonus_ca := cint(GetObjProperty(mobile, "bonus_ca"));
+   bonus_ca -= (level+2);
+   SetObjProperty(mobile, "bonus_ca", bonus_ca);
+   SendSysmessageEx(mobile, "Sua defesa foi rompida!", SSM_INFO);
+   PrintText(mobile, "Redução de Defesa", SSM_FAIL);
+   return 1;
+endfunction
+
+function EndScript(mobile, level)
+   var bonus_ca := cint(GetObjProperty(mobile, "bonus_ca"));
+   bonus_ca += (level+2);
+
+   if (bonus_ca <= 0)
+      EraseObjProperty(mobile, "bonus_ca");
+   else
+      SetObjProperty(mobile, "bonus_ca", bonus_ca);
+   endif
+   return 1;
+endfunction
+
+program TimedScriptInit(params)
+	var mobile := params[1];
+	var type   := params[2];
+	var level  := params[3];
+
+   if (typeof(type) == "String")
+      if (type == "End")
+         return EndScript(mobile, level);
+      elseif (type == "LogOff")
+         return;
+      endif
+   endif
+
+   return StartScript(mobile, type, level);
+endprogram

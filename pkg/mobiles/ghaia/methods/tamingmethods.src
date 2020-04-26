@@ -1,0 +1,273 @@
+use os;
+use uo;
+
+include ":yggdrasil:boss";
+include ":ghaia:npcmethods";
+
+var personalities := array{"Agressivo", "Medroso", "Calmo"};
+
+program Install()
+    return 1;
+endprogram
+
+exported function GetPetProperties(pet)
+   var props := GetObjProperty(pet, "info");
+
+   var return_obj := dictionary{
+      "loyalt" -> cint(props["loyalt"]),
+      "personality" -> props["personality"],
+      "commands" -> props["commands"],
+      "talents" -> props["talents"],
+      "exp" -> cint(props["exp"]),
+      "points" -> cint(props["points"])
+   };
+
+   return return_obj;
+endfunction
+
+exported function SetPetProperties(pet, new_props)
+   var props := GetObjProperty(pet, "info");
+   if (!props || props == error)
+      props := struct{};
+   endif
+
+   if (new_props["loyalt"] != error && cint(new_props["loyalt"]) != error)
+      props["loyalt"] := cint(new_props["loyalt"]);
+   endif   
+   
+   if (typeof(new_props["points"]) == "Integer")
+      props["points"] := cint(new_props["points"]);
+   endif   
+   
+   if (new_props["commands"] && typeOf(new_props["commands"]) == "Dictionary")
+      props["commands"] := new_props["commands"];
+   endif   
+
+   if (new_props["talents"] && typeOf(new_props["talents"]) == "Struct")
+      props["talents"] := new_props["talents"];
+   endif 
+
+   if (new_props["personality"] && new_props["personality"] in personalities)
+      props["personality"] := new_props["personality"];
+   endif
+
+   if (new_props["exp"])
+      props["exp"] := cint(new_props["exp"]);
+   endif
+
+   SetObjProperty(pet, "info", props);
+endfunction
+
+exported function InitPetProperties(pet, reset := 0)
+   var old_props := GetObjProperty(pet, "info");
+   if (old_props && old_props != error && !reset) return; endif;
+
+	var npctemplate := my_template(pet);
+	var cfg := ReadConfigFile(":taming:pets");
+	var pet_elem := cfg[npctemplate];
+   if (!pet_elem)
+      pet_elem := cfg["generic"];
+   endif
+
+   var props := dictionary{};
+
+   props.personality := personalities.randomentry();
+   if (old_props && old_props.personality)
+      props.personality := old_props.personality;
+   endif
+   
+   props.commands := GetConfigStringDictionary(pet_elem, "command");
+   foreach command in (props.commands.keys())
+      props.commands[command] := cint(props.commands[command]);
+      sleepms(2);
+   endforeach
+   props.loyalt := 0;
+   props.points := 0;
+   props.exp    := 0;
+   props.talents := array{};
+   if (old_props)
+      props.personality := old_props.personality;
+   else
+      var talents := GetConfigStringArray(pet_elem, "Talent");
+      foreach talent in talents
+         talent := SplitWords(talent);
+         if ( RandomInt(100) <= cint(talent[2]) )
+            props.talents.append(talent[1]);
+         endif
+      endforeach
+   endif
+
+   SetPetProperties(pet, props);
+
+   var hist := GetObjproperty(pet, "pet_hist");
+   if (!hist) hist := struct{}; endif
+
+   foreach k in (hist.keys())
+      case (k)
+         "hits":
+            var hitsmod := cint(GetObjProperty(pet, "hitsmod"));
+            hitsmod -= hist[k];
+            if (hitsmod <= 0) 
+               EraseObjProperty(pet, "hitsmod");
+            else
+               SetObjProperty(pet, "hitsmod", hitsmod);
+            endif
+            break;
+         "str":
+            var str := AP_GetTrueStat(pet, STRENGTH);
+            str -= hist[k];
+            AP_SetTrueStat(pet, STRENGTH, str);
+         "dex":
+            var dex := AP_GetTrueStat(pet, DEXTERITY);
+            dex -= hist[k];
+            AP_SetTrueStat(pet, DEXTERITY, dex);
+      endcase
+   endforeach
+   EraseObjProperty(pet, "pet_hist");
+endfunction
+
+exported function SetLoyalt(pet, amount := 1)
+   var props := GetObjProperty(pet, "info");
+   var new_loyalt := struct{ "loyalt" := cint(props.loyalt) + amount };
+   SetPetProperties(pet, new_loyalt);
+   return 1;
+endfunction
+
+exported function GetLoyalt(pet)
+   var props := GetObjProperty(pet, "info");
+   return cint(props.loyalt);
+endfunction
+
+exported function SetPoints(pet, amount := 1)
+   var props := GetObjProperty(pet, "info");
+   var new_points := struct{ "points" := cint(props.points) + amount };
+   SetPetProperties(pet, new_points);
+   return 1;
+endfunction
+
+exported function SetExp(pet, amount := 1)
+   var props := GetObjProperty(pet, "info");
+   if (cint(props.loyalt) >= 10) return; endif
+
+   var new_exp := cint(props.exp) + amount;
+   var max_exp := (cint(props.loyalt) + 1) * 100;
+
+   var new_prop := struct{ };
+   if (new_exp >= max_exp)
+      new_prop.exp := new_exp - max_exp;
+      SetPoints(pet);
+      SetLoyalt(pet);
+      
+      var amt := 20;
+      if (props.loyalt+1 == 10) amt := 50; endif
+
+		pet.master.SetAchievement("taming", 5);
+   else
+      new_prop.exp := new_exp;
+   endif
+
+   SetPetProperties(pet, new_prop);
+   return 1;
+endfunction
+
+exported function SetCommand(pet, command, amount := 1)
+   var props := GetObjProperty(pet, "info");
+   var command_list := props.commands;
+   if (!command_list[command] || command_list[command] >= 5 || command_list[command] < 0) return 0; endif;
+   
+   command_list[command] += amount;
+   var update := struct{ "commands" := command_list };
+   SetPetProperties(pet, update);
+   return 1;
+endfunction
+
+exported function HaveTalent(pet, talent)
+   var props := GetObjProperty(pet, "info");
+   if (talent in props.talents)
+      return 1;
+   endif
+
+   return 0;
+endfunction
+
+exported function isTamable(pet)
+   if (isBoss(pet))
+      return 0;
+   endif
+   
+   return 1;
+endfunction
+
+exported function SetHist(pet, attr, p)
+   var hist := GetObjproperty(pet, "pet_hist");
+   if (!hist) hist := struct{}; endif
+
+   hist[attr] := cint(hist[attr]) + p;
+   SetObjProperty(pet, "pet_hist", hist);
+endfunction
+
+exported function rollPetDice(pet, command, tame_difficulty)
+   if ((pet.master).cmdlevel >= 2 || GetObjProperty(pet, "summoned")) return 1; endif;
+
+   var props := GetPetProperties(pet);
+   if (!props.commands) return; endif;
+
+   var command_list := props.commands;
+   if (!command_list[command]) return; endif;
+
+   var cmd_level := command_list[command];
+   if (!cmd_level || cmd_level == 0) 
+      return;
+   elseif (cmd_level >= 5)
+      return 1;
+   endif
+
+   var dice_roll := rollAttrDice(pet.master, WISDOM) + GetSkillBonus(pet.master, TRATO_ANIMAIS);
+   if (dice_roll >= tame_difficulty-cmd_level)
+      return 1;
+   endif
+
+   return 0;
+endfunction
+
+exported function my_template(pet)
+	var npctemplate := SplitWords(pet.npctemplate, ":");
+   return npctemplate[3];
+endfunction
+
+exported function package(pet)
+	var npctemplate := SplitWords(pet.npctemplate, ":");
+   return npctemplate[2];
+endfunction
+
+exported function listAggro(creature)
+   return core_listAggro(creature);
+endfunction
+
+exported function getAggro(creature, serial)
+   return core_getAggro(creature, serial);
+endfunction
+
+exported function remAggro(creature, serial)
+   return core_remAggro(creature, serial);
+endfunction
+
+exported function setAggro(creature, serial, number := 1)
+   return core_setAggro(creature, serial, number);
+endfunction
+
+// exported function getHighestAggro(creature)
+//    return core_getHighestAggro(creature);
+// endfunction
+
+exported function getLowestAggro(creature)
+   return core_getLowestAggro(creature);
+endfunction
+
+exported function aggroProp(creature)
+   return core_aggroProp(creature);
+endfunction
+
+exported function setAggroProp(creature, aggro_prop)
+   return core_setAggroProp(creature, aggro_prop);
+endfunction

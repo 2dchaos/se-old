@@ -1,0 +1,14 @@
+/* $Id$
+ *
+ */
+use uo;
+use os;
+use cfgfile;
+
+include "include/say";
+include "include/arrays";
+
+program on_insert(who, book, movetype, inserttype, item, existing_stack, amt);
+	MoveItemToContainer(item, who.backpack);
+	return 0;
+endprogram

@@ -1,0 +1,54 @@
+
+use uo;
+use os;
+use math;
+use util;
+use cfgfile;
+
+include "include/client";
+include "include/say";
+include ":survival:fishingFunctions";
+include ":itemutils:canAccess";
+include ":attributes:include/attributeConstants";
+include ":attributes:include/attributes";
+include ":itemUtils:toolWear";
+include "include/objtype";
+include ":loot:lootParser";
+include "include/sysEvent";
+
+program catarminhoca(who, dirt)
+
+	if (distance(who, dirt) > 1)
+      SendSysMessageEx(who, "Você está muito longe para catar minhocas");
+      return 0;
+	endif 
+
+   var roll := rollAttrDice(who, DEXTERITY, 0, struct{ "get_critical" := 1 }) + GetSkillBonus(who, PLANTACAO);
+	var minhoca := cint("0x9980");
+
+
+	PerformAction( who, ANIM_BOW );
+	PrintText(who, "*revirando a terra*");
+	sleepms(1000);
+	PerformAction( who, ANIM_BOW );
+	sleepms(1000);
+
+	// if (roll.critical < 0)
+	// 	PrintText(dirt, "*tremor da terra*");
+	// 	sleepms(1500);
+	// 	SendSysMessageEx(who, "Isso não parece uma minhoca", SSM_INFO);
+	// 	var elemental := CreateNpcFromTemplate( "earthelemental", dirt.x, dirt.y, dirt.z );
+	// 	SetName(elemental, "Espirito da Terra");
+	// 	return 0;
+	// endif
+
+	if (roll.dice > 14)
+		SendSysMessageEx(who, "Você pegou algumas minhocas", SSM_INFO);
+		CreateItemInBackpack(who, minhoca, 1);
+	else
+		SendSysMessageEx(who, "Você revirou a terra e não achou nenhuma minhoca", SSM_FAIL);
+	endif
+
+	return 1;
+
+endprogram

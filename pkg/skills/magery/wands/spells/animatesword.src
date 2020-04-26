@@ -1,0 +1,90 @@
+use uo;
+use os;
+use cfgfile;
+
+include ":magery:tnmagery";
+include "include/client";
+include "include/sounds";
+include "include/say";
+include ":timedscripts:timedScripts";
+include ":attributes:attributes";
+include ":tn:npcutil";
+include ":ghaia:ghaiaUtil";
+include ":ghaia:ghaia";
+include ":magery:summon";
+include ":taming:taming";
+
+
+program animateSword(params)
+	var who := params[1];
+	var spellinfo := params[2];
+	var targ := params[3];
+	params := 0; // No longer needed
+	
+	while (1)
+      if (Distance(who, targ) < 4 && targ.objtype in array{0x0F60, 0x13b9, 0xf51, 0x1440, 0x1401} && targ.hp >= 5)
+			break;
+		elseif (!targ)
+			return 1;
+      else
+			SendSysMessage(who, "Essa não e uma espada valida ou esta muito longe. Escolha outra",3,28);
+			targ := target(who);
+		endif
+		sleepms(2);
+	endwhile
+
+	
+	//sendsysmessage(who, " " + GetNumPets(who) );
+	if (GetMaxPEts(who) <= GetNumPets(who) )
+		SendSysMessageEx(who, "Você tem " + GetNumPets(who) + " criaturas sob seu comando e o maximo sao : " + GetMaxPEts(who)  + "  . "  , SSM_FAIL);
+		return 1;
+	endif
+	
+	// PlayMovingEffect(who, sword, 0x483E, 10, 3);
+	sleepms(500);
+	
+	var summoned := CreateNpcFromTemplate(":ghaia:longsword", targ.x, targ.y, targ.z);
+	if (summoned)
+      var itemcfg := ReadConfigFile(":combat:itemdesc");
+      if (itemcfg[hex(targ.objtype)])
+         SetObjProperty(summoned, "dicedmg", targ.Damage);
+         SetObjProperty(summoned, "dmgbonus", spellinfo.powered);
+      endif
+
+      case (targ.objtype)
+         0x13b9: summoned.graphic:= 643;
+         0xf51: summoned.graphic:= 622;
+         0x1440: summoned.graphic:= 623;
+         0x1401: summoned.graphic:= 630;
+      endcase
+
+		PrintTextAbove(summoned, "*A espada ganha vida*", 3,191);
+      SetObjProperty(summoned, "pet_cost", 1);
+		AddPet(who, summoned.serial);
+		summoned.SetMaster(who);
+		summoned.script := ":ghaia:follower";
+		RestartScript(summoned);
+
+		if (!summoned.backpack)
+			var mochila := CreateItemAtLocation(summoned.x, summoned.y, summoned.z, 0x9b2, 1, summoned.realm);
+			EquipItem(summoned, mochila);
+		endif
+      MoveItemToContainer(targ, summoned.backpack);
+		
+		var duration := AP_GetStat(who, INTELLIGENCE);
+		if (duration <= 1)
+			duration := 2;
+		endif
+		duration := 20 + (duration * 3);
+
+		SetObjProperty(targ, "animatesword", summoned.serial);
+		SetObjProperty(summoned, "animatesword", targ.serial);
+      SetObjProperty(summoned, "started_loc", array{summoned.x, summoned.y, summoned.z});
+		
+		// SendSysMessage(who, "Quem a espada deve ter como alvo?",3,28);
+		// var mobile := target(who);
+		TS_StartTimer(summoned, "animatedweapon", duration);	
+	endif
+	return 1;
+
+endprogram

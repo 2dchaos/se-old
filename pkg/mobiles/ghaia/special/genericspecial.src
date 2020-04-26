@@ -1,0 +1,743 @@
+use uo;
+use os;
+use vitals;
+
+include ":timedscripts:timedScripts";
+include ":tn:cooldown";
+include "include/damage";
+include "include/shapes";
+include ":ghaia:ghaia";
+include "include/sysEvent";
+include "include/utils";
+
+var me;
+var custombehaviors := array{};
+var previoustarg := array{};
+var selected_opponent;
+var lock_targ := 0;
+
+program loko(params)
+	var who := params[1];
+	var event := params[2];
+   me := who;
+	//printtextabove(who, " "  + event); //apagar
+	if (!who.opponent)
+		return;
+   elseif (GetCooldown(who, StrReplace(event.name, " ", "_")))
+      return;
+   endif
+
+   if (event.chance != 100 )
+      if (Randomint(100)+1 > event.chance)
+         SetCooldown(who, StrReplace(event.name, " ", "_"), 2); 
+         return;
+      endif
+   endif
+
+   if ( event.hp_percent != 100)
+      var maxhit := cdbl(AP_GetVitalMaximumValue(who, HITS)) * (cdbl(event.hp_percent)/100);
+      if (cdbl(AP_GetVital(who, HITS)) > maxhit)
+         SetCooldown(who, StrReplace(event.name, " ", "_"), 2); 
+         return;
+      endif
+	endif
+
+	if (cint(event.dist) > 0 || cint(event.distm) > 0)
+      var dist := CoordinateDistance(who.x, who.y, who.opponent.x, who.opponent.y);
+		if (event.dist && dist < event.dist)
+			return;
+		endif
+
+		if (event.distm && dist > event.distm)
+			return;
+		endif
+	endif
+	// if (event.onlybloodied) 
+	// 	if ( !IsBloodied(who) )
+	// 		return;
+	// 	endif
+	// endif
+
+	//check distancia
+   var is_frozed := 1;
+	SetCooldown(who, StrReplace(event.name, " ", "_"), event.cd); 
+	//executa os states
+	foreach state in (event.steps)
+		EraseObjProperty(who, "noclosecombat");
+
+      if (state.type == "Frozen Until End")
+         who.frozen := 1;
+         SetObjProperty(who, "script_frozed", 1);
+         is_frozed := 1;
+		elseif (state.type == "Move")
+			SetObjProperty(who, "noclosecombat", 1);
+			var ev := struct;
+			ev.type := EVID_COMBAT_MOVE;
+			ev.x := state.x;
+			ev.y := state.y;
+			var loop := 1;
+    		while (loop)	
+				SendEvent(who, ev);
+            if (CoordinateDistance( who.x, who.y, state.x, state.y ) <= 1 )
+					EraseObjPRoperty(who, "noclosecombat");
+					loop := 0;
+				else 
+					loop := 1;
+				endif
+				sleepms(100);
+    		endwhile
+		elseif (state.type == "Dash")
+			var targ := ReturnPointsByTarget(who, state.target, state.conedist);
+         targ := targ.randomentry();
+         if (!targ) continue; endif
+         var last_loc := array{who.x, who.y};
+         var targ_face := GetFacing(who.x, who.y, targ.x, targ.y);
+         var mod := GetModByFacing(targ_face);
+         who.facing := targ_face;
+         var mobs := array{};
+         for i := 0 to (state.dist)
+            if (who.paralyzed) break; endif
+            MoveObjectToLocation(me, who.x+mod[1], who.y+mod[2], who.z, who.realm, MOVEITEM_IGNOREMOVABLE);
+            // RunTowardLocation(who.x+mod[1], who.y+mod[2]);
+            if (who.x == last_loc[1] && who.y == last_loc[2]) break; endif
+            mobs += GetEnemiesNear(me, 0);
+            last_loc := array{who.x, who.y};
+            if (i != state.dist)
+               sleepms(110);
+            endif
+         endfor
+
+         if (!state.nosetprevious) previoustarg := mobs; endif
+		elseif (state.type == "Pushback")
+			var targ := selectOpponent(who, state.target, state.conedist);
+			foreach t in targ
+            sleepms(2);
+            if (t.paralyzed) break; endif
+            if (state.behaviour["Para frente"])
+               if (state.behaviour["relacional"])
+                  PushMobile(who, state.dist, 100, t, 1);
+               else
+                  PushBack(t, state.dist, 100, 1);
+               endif
+            elseif (state.behaviour["Para trás"])
+               if (state.behaviour["relacional"])
+                  PushMobile(who, state.dist, 100, t);
+               else
+                  PushBack(t, state.dist, 100);
+               endif
+            endif
+			endforeach
+      elseif (state.type == "Pull Target")
+         for i := 1 to (cint(state.times) *2)
+            PlayAction(who, cint(state.action));
+            if (i % 2 == 0)
+			      var enemies := selectOpponent(who, state.target, state.conedist);
+               foreach mob in enemies
+                  sleepms(2);
+                  if ( Distance(who, mob) < 1 )
+                     continue;
+                  endif
+                  if (CheckLineOfSight(who, mob))
+                     if (state.text) SendSysMessageEx(mob, state.text); endif
+                     var point := GetModByFacing(GetFacing(who.x, who.y, mob.x, mob.y));
+                     point[1] *= -1;
+                     point[2] *= -1;
+                     MoveObjectToLocation(mob, mob.x+point[1], mob.y+point[2], mob.z, mob.realm, MOVEOBJECT_FORCELOCATION);
+                     MoveObjectToLocation(mob, mob.x+point[1], mob.y+point[2], mob.z, mob.realm, MOVEOBJECT_FORCELOCATION);
+                  endif
+               endforeach
+            endif
+            sleepms(300);
+         endfor
+		elseif (state.type == "Consume Creature")
+         var cria;
+         if (state.what_type == "Item")
+            var targ := selectOpponent(who, state.target, state.conedist);
+            foreach mob in targ
+               if (mob.npctemplate[state.what])
+                  SetObjProperty(mob, "GuardKill", 1);
+                  SetObjProperty(mob, "nocorpse", 1);
+                  ApplyRawDamage(mob, 500);
+                  cria := 1;
+                  break;
+               endif
+               sleepms(2);
+            endforeach
+         else
+            var targ := ReturnPointsByTarget(who, state.target, state.conedist);
+            foreach p in targ
+               var items := ListItemsNearLocationOfType( p.x, p.y, p.z, 0, cint(state.what) );
+               if (items.size())
+                  Destroyitem(items[1]);
+                  cria := 1;
+                  break;
+               endif
+               sleepms(2);
+            endforeach
+         endif
+
+         if (!cria && state.stopscript)
+            break;
+         elseif (cria)
+            var my_hp := cdbl(AP_GetVitalMaximumValue(who, HITS)) * (cdbl(state.hp_percent) /100);
+            HealFLS(who, my_hp);
+         endif
+		elseif (state.type == "Teleport")
+			var targ := selectOpponent(who, state.target, state.conedist);
+			foreach t in targ
+            if (state.behaviour["Teleportar X,Y,Z"])
+               MoveObjectToLocation(t, state.x, state.y, state.z, who.realm, MOVEOBJECT_FORCELOCATION|MOVEITEM_IGNOREMOVABLE);
+            elseif (state.behaviour["Alvo (DO NPC)"])
+               MoveObjectToLocation(t, who.opponent.x, who.opponent.y, who.opponent.z, who.opponent.realm, MOVEOBJECT_FORCELOCATION|MOVEITEM_IGNOREMOVABLE);
+            elseif (state.behaviour["Tele no NPC"])
+               MoveObjectToLocation(t, who.x, who.y, who.z, who.realm, MOVEOBJECT_FORCELOCATION|MOVEITEM_IGNOREMOVABLE);
+            elseif (state.behaviour["+-X,Y,Z"])
+               MoveObjectToLocation(t, t.x+cint(state.x), t.y+cint(state.y), t.z+cint(state.z), who.realm, MOVEOBJECT_FORCELOCATION|MOVEITEM_IGNOREMOVABLE);
+            elseif (state.behaviour["Ao redor (Alvo)"])
+               var point := RandomPlace(who.opponent, 1);
+               MoveObjectToLocation(t, point.x, point.y, who.opponent.z, who.opponent.realm, MOVEOBJECT_FORCELOCATION);
+               t.facing := GetFacing(t.x, t.y, who.opponent.x, who.opponent.y);
+            elseif (state.behaviour["Ao redor (NPC)"])
+               var point := RandomPlace(who, 1);
+               MoveObjectToLocation(t, point.x, point.y, who.z, who.opponent.realm, MOVEOBJECT_FORCELOCATION);
+               t.facing := GetFacing(t.x, t.y, who.x, who.y);
+            endif
+            sleepms(2);
+			endforeach
+
+			// if (state.target == "Self")
+			// 	MoveObjectToLocation(who, state.x, state.y, state.z, who.realm, MOVEOBJECT_FORCELOCATION|MOVEITEM_IGNOREMOVABLE);
+			// elseif (state.target == "Opponent")
+			// 	MoveObjectToLocation(who.opponent, state.x, state.y, state.z, who.realm, MOVEOBJECT_FORCELOCATION|MOVEITEM_IGNOREMOVABLE);
+			// elseif (state.target == "All Opponents")
+			// 	var opponents := GetAllOpponents(who);
+			// 	foreach op in opponents
+			// 		MoveObjectToLocation(op, state.x, state.y, state.z, who.realm, MOVEOBJECT_FORCELOCATION|MOVEITEM_IGNOREMOVABLE);
+			// 	endforeach
+			// endif
+         
+		elseif (state.type == "TimedScript")
+			var targ := selectOpponent(who, state.target, state.conedist);
+			foreach t in targ
+            sleepms(2);
+            if (state.resist_test && state.resist_test != "Nenhum")
+               if (rollResistDice(t, state.resist_test) > state.resist_diff)
+                  SendSystemReport(t, "*resistido*");
+                  continue;
+               endif
+            endif
+				TS_StartTimer(t, state.timername, cint(state.timerduration), state.level);
+			endforeach
+      elseif (state.type == "Resist Test")
+			var targ := selectOpponent(who, state.target, state.conedist);
+         var resist_list := array{};
+			foreach t in targ
+            if (state.resist_test)
+            sleepms(2);
+               if (rollResistDice(t, state.resist_test) > state.resist_diff)
+                  SendSystemReport(t, "*resistido*");
+                  if (state.successonly) resist_list.append(t); endif
+                  continue;
+               endif
+               if (!state.successonly) resist_list.append(t); endif
+            endif
+			endforeach
+         if (!resist_list.size()) break; endif
+         previoustarg := resist_list;
+		elseif (state.type == "Perform Action" )
+			var targ := selectOpponent(who, state.target, state.conedist);
+
+			foreach t in targ
+            PlayAction(t, cint(state.id));
+			endforeach
+
+		elseif (state.type == "Text")
+			var targ := selectOpponent(who, state.target, state.conedist);
+
+			foreach t in targ
+				PrintText(t, state.text, state.color);
+			endforeach
+		elseif (state.type == "Play Sound")
+			PlaySoundEffect(who, state.id);
+		elseif (state.type == "Delay")
+         if (state.delaytype == "milissegundos")
+			   sleepms(state.delay);
+         else
+			   sleep(state.delay);
+         endif
+		elseif (state.type == "Heal")
+			var targ := selectOpponent(who, state.target, state.conedist);
+         foreach t in targ
+            case (state.vital)
+               "Hits": HealFLS(t, RandomDiceRoll(state.healamt));
+               "Mana": HealMana(t, RandomDiceRoll(state.healamt));
+               "Stam": HealStamina(t, RandomDiceRoll(state.healamt));
+            endcase
+            sleepms(2);
+         endforeach
+		elseif ( state.type == "Graphic Effect")
+         state.fxid := SplitWords(cstr(state.fxid)).randomentry();
+			if (state.style == "Por pontos")
+            var targ := ReturnPointsByTarget(who, state.target, state.conedist);
+				if (state.graphictype == "Stationary")
+				   foreach t in targ
+                  if (state.fxid == "Electric")
+                     LightningEffect(struct{ "x" := t.x, "y" := t.y, "z" := t.z, "realm" := me.realm}, 60);
+                  else
+                     PlayStationaryEffectEx( t.x, t.y, t.z+2, who.realm, cint(state.fxid), state.speed, state.loops+20, cint(state.color));
+                  endif
+               endforeach
+				elseif (state.graphictype == "Moving")
+				   foreach t in targ
+                  if (state.direction == "Mob->Player")
+                     PlayMovingEffectXYZEx( who.x, who.y, who.z, t.x, t.y, t.z, who.realm, cint(state.fxid), state.speed, state.loop, cint(state.color));
+                  else
+                     PlayMovingEffectXYZEx( t.x, t.y, t.z, who.x, who.y, who.z, who.realm, cint(state.fxid), state.speed, state.loop, cint(state.color));
+                  endif
+                  sleepms(2);
+               endforeach
+            endif
+               // var startx := Cint(state.startx) + RandomInt(2 * state.startradius) - state.startradius;
+               // var starty :=  Cint(state.starty) + RandomInt(2 * state.startradius) - state.startradius;
+               // var endx := Cint(state.endx) + RandomInt(2 * state.endradius) - state.endradius;
+               // var endy := Cint(state.endy) + RandomInt(2 * state.endradius) - state.endradius;
+               // PlayMovingEffectXYZEx( startx, starty, cint(state.startz), endx, endy, Cint(state.endz), who.realm, cint(state.fxid), state.speed, state.loop, cint(state.color));
+                 
+			else
+			   var targ := selectOpponent(who, state.target, state.conedist);
+				foreach t in targ
+               if (state.graphictype == "Stationary")
+                  if (state.fxid == "Lightning")
+                     PlayLightningBoltEffect(t);
+                  else
+                     PlayObjectCenteredEffectEx(t, cint(state.fxid), state.speed, state.loops, cint(state.color));
+                  endif
+               elseif (state.graphictype == "Moving")
+                  if (state.direction == "Mob->Player")
+                     PlayMovingEffectEx(who, t, cint(state.fxid), state.speed, state.loops, cint(state.color));
+                  else
+                     PlayMovingEffectEx(t, who, cint(state.fxid), state.speed, state.loops, cint(state.color)); 
+                  endif
+               endif
+               sleepms(2);
+				endforeach
+			endif
+      elseif (state.type == "Play Cast Anim")
+         if (!playCastAnimation(who, state.times))
+            break;
+         endif
+      elseif(state.type == "Throw Bomb")
+         var targ := selectOpponent(who, state.target, state.conedist);
+
+         foreach t in targ
+            if (CheckLineOfSight(who, t))
+               var item := CreateItemAtLocation(who.x, who.y, who.z, state.bombs.randomentry());
+               start_script(":alchemy:potions/explosionTimer", array{item, who});
+               SetObjProperty(item, "#bomb", 1);
+
+               PlayMovingEffectXYZ( who.x, who.y, who.z+15, t.x, t.y, t.z, 0x0f09, 8, 0, 0 );
+               MoveObjectToLocation(item, t.x, t.y, t.z, t.realm, MOVEOBJECT_FORCELOCATION );
+               EraseObjProperty(item, "#bomb");
+            endif
+            sleepms(2);
+         endforeach
+		elseif (state.type == "Dmg")
+         var targ := selectOpponent(who, state.target, state.conedist);
+         var dmg := state.dmg;
+         if (dmg["d"]) 
+            dmg := RandomDiceRoll(state.dmg);
+         else
+            dmg := cint(state.dmg);
+         endif
+
+			foreach vital in (state.vitals)
+				foreach t in targ
+               sleepms(2);
+               if (state.resist_test && state.resist_test != "Nenhum")
+                  if (rollResistDice(t, state.resist_test) > state.resist_diff)
+                     SendSystemReport(t, "*resistido*");
+                     continue;
+                  endif
+               endif
+
+					if (vital == "Hits")
+						DamageFLS(t, dmg, state.dmgtype, who);
+					elseif (vital == "Stam")
+						AP_ConsumeVital(t, STAMINA, dmg);
+					elseif (vital == "Mana")
+						AP_ConsumeVital(t, MANA, dmg);
+					endif
+				endforeach
+			endforeach
+      elseif (state.type == "Create Item")
+         if (typeof(state.target) == "Array")
+            var item := CreateItemAtLocation(state.target[1], state.target[2], state.target[3], state.item);
+            if (state.color) item.color := state.color; endif
+            item.movable := state.movable;
+         else
+            var targ := ReturnPointsByTarget(who, state.target, state.conedist);
+            foreach t in targ
+               var item := CreateItemAtLocation(t.x, t.y, t.z, state.item);
+               SetObjProperty(item, "Owner", who.serial);
+               if (state.color) item.color := state.color; endif
+               item.movable := state.movable;
+
+               if (state.p1.size() == 2) SetObjProperty(item, state.p1[1], cint(state.p1[2])); endif
+               if (state.p2.size() == 2) SetObjProperty(item, state.p2[1], cint(state.p2[2])); endif
+               if (state.p3.size() == 2) SetObjProperty(item, state.p3[1], state.p3[2]); endif
+               sleepms(2);
+            endforeach
+         endif
+      elseif (state.type == "Set Cooldown")
+         SetCooldown(who, state.prop, state.time);
+		elseif (state.type == "Create Mine")
+         var mineinfo := struct{
+            difficulty := state.diff,
+            type := state.mine_type,
+            dice_dmg := state.dmg
+         };
+
+         for i := 1 to (state.amount)
+            var targ := ReturnPointsByTarget(who, state.target, state.conedist);
+            targ := targ.randomentry();
+            if (!targ.z) targ.z := who.z; endif
+            start_script(":magery:wands/spells/mina", array{who, mineinfo, targ});
+         endfor
+      elseif (state.type == "Metamorfose")
+         var choose_monster := state.monsters.randomentry();
+         var oldgraphic := GetObjProperty(who, "oldgraphic");
+         if (!oldgraphic) oldgraphic := who.graphic; endif
+
+         SetObjProperty(who, "metamorfose", choose_monster);
+         SetObjProperty(who, "oldgraphic", oldgraphic);
+         sleep(1);
+         var meta_config := NPC_GetNPCConfig(":ghaia:{}".format(choose_monster));
+         who.graphic := meta_config.objtype;
+         TS_StartTimer(who, "metamorfose", cint(state.time));
+      elseif (state.type == "Hidden")
+         GrantPrivilege(who, "runwhilestealth");
+         me.enable("runwhilestealth");
+         me.hidden := 1;
+         me.stealthsteps := state.stealthsteps;
+         if (state.attackhidden)
+            GrantPrivilege(who, "hiddenattack");
+            me.enable("hiddenattack");
+         endif
+         if (state.flee)
+            ghaiaFlee(who.opponent, who);
+         endif
+      elseif (state.type == "Magicball")
+         var targs := selectOpponent(who, state.target, state.conedist);
+         foreach targ in targs
+            var create_at := Splitwords(state.create_at);
+            var pos;
+            if (create_at.size() == 3)
+               pos := array{who.x+cint(create_at[1]), who.y+cint(create_at[2]), who.z+cint(create_at[3])};
+            else
+               pos := array{who.x, who.y, who.z};
+            endif
+            var direction := targ;
+            if (state.to_where == "Local")
+               direction := GetFacing(who.x, who.y, targ.x, targ.y);
+            endif
+            var newball := CreateItemAtLocation(pos[1], pos[2], pos[3], 0xFFBE);
+            newball.SetOwner(who);
+            newball.SetDirection(direction);
+            newball.SetDuration(state.duration);
+            newball.SetType(state.ball_type);
+            newball.SetEffect(state.effect);
+            newball.SetBallSound(state.sound, 0);
+            newball.SetBallGraphic(state.graphic, state.color);
+            if (state.subgraphic)
+               newball.StoreBallGraphic(state.subgraphic, state.subcolor);
+            endif
+            newball.SetDmgInfo(struct{ "dice":= state.dmg_dice, "type" := state.dmg_type });
+            sleepms(2);
+         endforeach
+      elseif (state.type == "Simple Target")
+         var targs := selectOpponent(who, state.target, state.conedist);
+         var new_targs := array{};
+         foreach t in targs
+            sleepms(2);
+            if (!state.nochecklos)
+               if (!CheckLineOfSight(who, t))
+                  continue;
+               endif
+            endif
+            new_targs.append(t);
+         endforeach
+
+         if (!state.noincludeself)
+            new_targs.append(who);
+         endif
+
+         if (!state.nostopifnotarg)
+            if (!new_targs.size()) break; endif
+         endif
+
+         if (state.nolocktargs)
+            lock_targ := 1;
+         endif
+
+         previoustarg := new_targs;
+      elseif (state.type == "Steal Player")
+         var targs := selectOpponent(who, state.target, state.conedist);
+         foreach targ in targs
+            sleepms(2);
+            if (!state.onlybehind)
+               if (!IsBehind(targ, who.x, who.y))
+                  continue;
+               endif
+            endif
+            var roll := rollAttrDice(who, DEXTERITY) + GetSkillBonus(who, FURTO);
+            foreach item in EnumerateItemsInContainer(targ.backpack, ENUMERATE_ROOT_ONLY)
+               var diff := 10 + CInt(item.amount * 0.3) + cint(item.weight/2);
+               if (roll > diff)
+                  MoveItemToContainer(item, who.backpack);
+                  var user_percep := rollAttrDice(targ, WISDOM) + GetSkillBonus(targ, PERCEPCAO);
+                  if (user_percep > roll)
+                     SendSystemReport(who, "*pegou item da sua mochila*", SSM_FAIL, targ);
+                  endif
+                  break;
+               endif
+            endforeach
+         endforeach
+      elseif (state.type == "Spell Trilha")
+         var targ := selectOpponent(who, state.target, state.conedist);
+         var trilhainfo := struct{
+            dice_roll := state.diff,
+            dice_dmg := state.dice_dmg,
+            type := state.trilha_type
+         };
+			foreach t in targ
+            if (!t.z) t.z := who.z; endif
+            start_script(":magery:wands/spells/caminho_fogo", array{who, trilhainfo, t});
+            sleepms(2);
+         endforeach
+		elseif (state.type == "Summon Npcs") // Summonar NPC
+	      var amt := 0;
+         var tries := 0;
+         var amount := state.amount;
+         if (amount["d"]) 
+            amount := RandomDiceRoll(amount);
+         else
+            amount := cint(amount);
+         endif
+
+         while (amt < amount)
+            if (tries >= 20)
+               break;
+            endif
+            var targ;
+            if (state.x == 6 && state.y == 6 && state.z == 6)
+               targ := ReturnPointsByTarget(who, state.target, state.conedist);
+               targ := targ.randomentry();
+            else
+               targ := struct{ x := state.x, y := state.y, z := state.z };
+            endif
+
+            var hostile_list := ListHostiles(who, 8);
+            if (!targ) break; endif
+            var npc := CreateNpcFromTemplate( cstr(state.npctemplate), Cint(targ.x) + RandomInt(2 * state.range) - state.range,
+               Cint(targ.y) + RandomInt(2 * state.range) - state.range, Cint(targ.z));
+
+            if (npc != error)
+               SetObjProperty(npc, "spawnspot", GetObjProperty(who, "spawnspot"));
+               var duracaonpc := state.duracao;
+               if (!duracaonpc)
+                  duracaonpc := 120;
+               endif
+               TS_StartTimer(npc, "summon", duracaonpc);
+               amt := amt + 1;
+
+               if (state.walk_to && state.walk_to.size())
+                  var coord;
+                  if (state.walk_to[1] == 6 && state.walk_to[2] == 6 && state.walk_to[3] == 6 )
+                     coord := struct{ "x" := who.x, "y" := who.y, "z" := who.z};
+                  else
+                     coord := struct{ "x" := state.walk_to[1], "y" := state.walk_to[2], "z" := state.walk_to[3]};
+                  endif
+                  ghaiaObjective(npc, coord, 2, 1);
+                  ghaiaAttack(hostile_list.randomentry(), npc);
+               endif
+            endif
+            tries += 1;
+            sleepms(2);
+         endwhile
+
+		endif
+		sleepms(100);
+	endforeach
+
+   if (is_frozed)
+      who.frozen := 0;
+   endif
+endprogram
+
+function selectOpponent(who, type, dist := 3)
+   if (!dist) dist := 3; endif
+   var targ := array{};
+
+   if (type == "Previous Targets")
+      targ := previoustarg;
+   elseif (type == "Self")
+      targ.append(who);
+   elseif (type == "Around Self")
+      targ := GetEnemiesNear(who, dist);
+   elseif (type == "Opponent")
+      if (who.connected)
+         if (!selected_opponent)
+            var user_targ := Target(who);
+            selected_opponent := user_targ;
+            targ.append( user_targ );
+         else
+            targ.append( selected_opponent );
+         endif
+      else
+         targ.append( struct{x := who.opponent.x, y := who.opponent.y, z := who.opponent.z} );
+      endif
+
+      targ.append(who.opponent);
+   elseif (type == "Around Opponent")
+      targ := GetEnemiesNear(who.opponent, dist);
+   elseif (type == "All Opponents")
+      targ := GetEnemiesNear(who, dist);
+   elseif (type["Cone"])
+      var f := who.facing;
+      if (type["back"])
+         f := InverseFacing(who.facing);
+      elseif (type["left"])
+         f := InverseFacing(who.facing, 1);
+      elseif (type["right"])
+         f := InverseFacing(who.facing, 2);
+      endif
+
+      var points := GetConeCoordsInFront(who.x, who.y, f, dist);
+      foreach p in points
+         var mobs := ListMobilesNearLocation(cint(p[1]), cint(p[2]), who.z, 0);
+         targ := targ + mobs;
+         sleepms(2);
+      endforeach
+   elseif (type == "Random Opponent")
+      targ := GetEnemiesNear(who, dist);
+      targ := array{ targ.randomEntry() };
+   elseif (type == "Points to Opponent")
+      var points := GetCoordsInLine(who.x, who.y, who.opponent.x, who.opponent.y);
+      foreach p in points
+         var mobs := ListMobilesNearLocation(cint(p[1]), cint(p[2]), who.opponent.z, 0);
+         targ := targ + mobs;
+         sleepms(2);
+      endforeach
+   elseif (type == "In Line")
+      var points := GetLineCoordsInFront(who.x, who.y, who.facing, dist);
+      foreach p in points
+         var mobs := ListMobilesNearLocation(cint(p[1]), cint(p[2]), who.z, 0);
+         targ := targ + mobs;
+         sleepms(2);
+      endforeach
+   elseif (type == "All Allies")
+      targ := CheckifIsNotEnemy(who, ListMobilesInLineOfSight(who, dist));
+   elseif (type == "Random Ally")
+      targ := CheckifIsNotEnemy(who, ListMobilesInLineOfSight(who, dist));
+      targ := array{ targ.randomEntry() };
+   endif
+
+   if (!lock_targ) previoustarg := targ; endif
+   return targ;
+endfunction
+
+function GetAllOpponents(who)
+	var a := ListHostiles(who);
+	var mobs := ListMobilesNearLocation(who.x, who.y, LIST_IGNORE_Z, 12, who.realm);
+
+	foreach mobile in mobs
+		if (mobile.serial != who.serial)
+			if ( !(mobile in a) )
+				if (mobile.acctname || mobile.script == ":ghaia:follower" )
+					a.append(mobile);
+				endif
+			endif 
+		endif
+	endforeach
+
+	return a;
+endfunction
+
+function ReturnPointsByTarget(who, type, conedist := 3)
+   var targ := array{};
+   if (type == "Previous Targets")
+      targ := previoustarg;
+   elseif (type == "Self")
+      targ.append( struct{x := who.x, y := who.y, z := who.z} );
+   elseif (type == "Around Self")
+      targ := GetCoordsInSquare(who.x, who.y, conedist);
+   elseif (type== "In Line")
+      targ := GetLineCoordsInFront(who.x, who.y, who.facing, conedist);
+      foreach p in targ
+         p := struct{x := p[1], y := p[2], z := who.z+1};
+         sleepms(2);
+      endforeach
+   elseif (type == "Opponent")
+      if (who.connected)
+         if (!selected_opponent)
+            var user_targ := Target(who);
+            selected_opponent := user_targ;
+            targ.append( struct{x := user_targ.x, y := user_targ.y, z := user_targ.z} );
+         else
+            targ.append( struct{x := selected_opponent.x, y := selected_opponent.y, z := selected_opponent.z} );
+         endif
+      else
+         targ.append( struct{x := who.opponent.x, y := who.opponent.y, z := who.opponent.z} );
+      endif
+   elseif (type == "Around Opponent")
+      targ := GetCoordsInSquare(who.opponent.x, who.opponent.y, conedist);
+   elseif (type["Cone"])
+      var f := who.facing;
+      if (type["back"])
+         f := InverseFacing(who.facing);
+      elseif (type["left"])
+         f := InverseFacing(who.facing, 1);
+      elseif (type["right"])
+         f := InverseFacing(who.facing, 2);
+      endif
+
+      targ := GetConeCoordsInFront(who.x, who.y, f, conedist);
+      foreach p in targ
+         p := struct{x := p[1], y := p[2], z := who.z+1};
+         sleepms(2);
+      endforeach
+   elseif (type == "Random Opponent")
+      targ := GetEnemiesNear(who, conedist);
+      targ := array{ targ.randomEntry() };
+   elseif (type == "All Opponents")
+      targ := GetEnemiesNear(who, conedist);
+   elseif (type == "Points to Opponent")
+      targ := GetCoordsInLine(who.x, who.y, who.opponent.x, who.opponent.y);
+      foreach p in targ
+         p.z := who.opponent.z;
+         sleepms(2);
+      endforeach
+   elseif (type == "All Allies")
+      targ := CheckifIsNotEnemy(who, ListMobilesInLineOfSight(who, conedist));
+   elseif (type == "Random Ally")
+      targ := CheckifIsNotEnemy(who, ListMobilesInLineOfSight(who, conedist));
+      targ := array{ targ.randomEntry() };
+   endif
+
+   return targ;
+endfunction
+
+function playCastAnimation(who, times := 0)
+   if (!times) times := RandomDiceRoll("1d4"); endif
+
+   for i := 1 to times
+      if (TS_GetTimerInfo(who, "tombar") || TS_GetTimerInfo(who, "paralyze") || who.paralyzed)
+         return 0;
+      endif
+      PerformAction(who, ANIM_CAST_DIR);
+      sleepms(650);
+   endfor
+
+   return 1;
+endfunction
+

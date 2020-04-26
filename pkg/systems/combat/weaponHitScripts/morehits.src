@@ -1,0 +1,38 @@
+use uo;
+use util;
+
+include "include/damage";
+include "include/client";
+include "include/sounds";
+include ":tn:cooldown";
+
+program HitScript(params)
+	var attacker	:= params[1];
+	var defender	:= params[2];
+	// var weapon	:= params[3];
+	// var armor	:= params[4];
+	// var basedamage	:= params[5];
+	// var rawdamage	:= params[6];
+	params := 0; // Not needed anymore.
+   if (GetCooldown(attacker, "morehits_done"))
+      return;
+   endif
+
+   SetCooldown(attacker, "morehits_done", 2);
+
+   var n_hits;
+   if (attacker.connected)
+      if (AP_GetTrueSkill(attacker, MACHADOS) >= 4 || AP_GetTrueSkill(attacker, ESPADAS) >= 4)
+         n_hits := 1;
+      endif
+   else
+      n_hits := cint(GetObjproperty(attacker, "morehits"));
+   endif
+
+   for i := 1 to n_hits
+      attacker.attack_once(defender);
+      sleepms(2);
+   endfor
+	
+	return 1;
+endprogram

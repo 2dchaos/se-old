@@ -1,0 +1,10 @@
+use uo;
+
+include "include/say";
+include ":mounts:mounts";
+program dismount(who)
+
+	var targ := target(who);
+	MP_Unmount(targ);
+
+endprogram

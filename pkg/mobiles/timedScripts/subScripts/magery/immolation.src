@@ -1,0 +1,67 @@
+/* $Id: alcohol.src 87 2006-05-23 19:04:43Z sroyalty $
+ *
+ */
+
+use uo;
+use os;
+use util;
+
+include "include/client";
+include ":timedscripts:timedScripts";
+include "include/say";
+include "include/utils";
+include "include/sounds";
+include ":attributes:attributes";
+include ":combat:combat";
+
+function StartScript(mobile, attacker := 0, level := 0)
+   var dmg_roll;
+   case (level)
+      0: dmg_roll :="1d4+1";
+      1: dmg_roll :="2d4+2";
+      2: dmg_roll :="3d4+6";
+      3: dmg_roll :="4d4+8";
+      4: dmg_roll :="5d4+12";
+   endcase
+
+   while (1)
+      PlayObjectCenteredEffectEx( mobile,  0x19AB, 5, 30, 0, 4, 0);
+      DamageFLS(mobile, RandomDiceRoll(dmg_roll), DMG_FIRE, attacker);
+      if (RandomInt(2) == 1)
+         mobile.frozen := 1;
+         if (!mobile.npctemplate)
+            PlayCustomSound(mobile, 23);
+         else
+            PlayHurtSound(mobile);
+         endif
+         SendSysMessageEx(mobile, "Você está em pânico", SSM_FAIL);
+         sleep(1);
+         mobile.frozen := 0;
+      else
+         sleep(1);
+      endif
+      sleep(1);
+   endwhile
+	return 1;
+endfunction
+
+function EndScript(mobile)
+   mobile.frozen := 0;
+	return 1;
+endfunction
+
+program TimedScriptInit(params)
+	var mobile := params[1];
+	var type   := params[2];
+	var level  := params[3];
+
+   if (typeof(type) == "String")
+      if (type == "End")
+         return EndScript(mobile);
+      elseif (type == "LogOff")
+         return;
+      endif
+   endif
+
+   return StartScript(mobile, type, level);
+endprogram

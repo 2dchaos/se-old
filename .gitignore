@@ -1,0 +1,16 @@
+*.swp
+*.ecl
+*~
+*.so
+*.dep
+*.exe
+*.dmp
+*.log
+public/*
+data/*
+realm/*
+log/*
+config/servers.cfg
+pol.exe'
+data.zip
+pol.cfg

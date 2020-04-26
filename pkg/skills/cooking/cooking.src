@@ -1,0 +1,162 @@
+use uo;
+use os;
+use cfgfile;
+
+include "include/client";
+include ":attributes:attributes";
+
+program cook(who, item)
+  EraseObjProperty(who, "IsMeditating");
+  EraseObjProperty(who, "HealTimer");
+  if(!Accessible(who, item))
+    return;
+  endif
+  if(!ReserveItem(item))
+    return;
+  endif
+  if(cookon(who, item))
+    cookit(who, item);
+  endif
+endprogram
+
+function cookon(who, item)
+
+  if(!item)
+    return 0;
+  endif
+
+  SendSysMessageEx(who, "Escolha a fonte de calor para cozinhar.");
+
+  var trg := Target(who);
+  if(!trg)
+    SendSysMessageEx(who, "Cancelado.");
+    return 0;
+  endif
+
+  if(!Accessible(who, trg))
+    SendSysMessageEx(who, "Você não alcança isto.");
+    return 0;
+  endif
+
+  var cfg := ReadConfigFile(":cooking:config/recipes");
+  var needoven := cfg[item.objtype].oven;
+
+  if (needoven == 1)
+
+     if ((trg.objtype >= 0x0461) and (trg.objtype <= 0x046f))
+		return 1;
+     elseif ((trg.objtype >= 0x092b) and (trg.objtype <= 0x0934))
+		return 1;
+     endif
+     SendSysMessageEx(who, "Você precisa de um forno para cozinhar isto.");
+     return 0;
+
+  else
+    if((trg.objtype >= 0x08cf) && (trg.objtype <= 0x08df))
+      return 1;
+    elseif((trg.objtype >= 0x092b) && (trg.objtype <= 0x096c))
+      return 1;
+    elseif((trg.objtype >= 0x45d) && (trg.objtype <= 0x48e))
+      return 1;
+    elseif((trg.objtype >= 0x0de3) && (trg.objtype <= 0x0de9))
+      return 1;
+    elseif((trg.objtype >= 0x0e31) && (trg.objtype <= 0x0e33))
+      return 1;
+    elseif((trg.objtype >= 0x1849) && (trg.objtype <= 0x1850))
+      return 1;
+    elseif((trg.objtype >= 0x197a) && (trg.objtype <= 0x19a9))
+      return 1;
+    elseif((trg.objtype >= 0x0de3) && (trg.objtype <= 0x0de9))
+      return 1;
+    elseif((trg.objtype == 0x19bb) || (trg.objtype == 0x0fb1))
+      return 1;
+    else
+      SendSysMessageEx(who, "Você não pode cozinhar comida nisto.");
+    return 0;
+    endif
+
+  endif
+endfunction
+
+function cookit(who,item);
+  var cfg := ReadConfigFile(":cooking:cooking");
+  var skill_needed := cfg[item.objtype].skill_needed;;
+  var points := Cint(cfg[item.objtype].points);
+  if (!points)
+	  points := skill_needed*2;
+  endif
+  var elem      := FindConfigElem(cfg, item.objtype);  
+  var products  := GetConfigStringArray(elem,"product");
+  var product   := Cint(products[RandomInt(len(products))+1]);
+  var ingredients := GetConfigStringArray(elem, "ingredient");
+  var theIngredients := {};
+  var newitem;
+  if (ingredients)
+    theIngredients := GetIngredients(who, ingredients);
+    if (theIngredients == error)
+      SendSysMessageEx(who, "Você não tem os igredientes necessarios.");
+      return;
+    endif
+  endif
+
+  if(skill_needed)
+	var cookcheck := rollAttrDice(who, WISDOM) + GetSkillBonus(who, COZINHA);
+    if(cookcheck > skill_needed);
+		var consume := SubtractAmount(item, 1);
+      if(consume)
+        newitem := CreateItemInBackpack(who, product, 1);
+        if(newitem)
+	      SendSysMessageEx(who, "Você guardou o item na sua mochila");
+	    else
+	      SendSysMessageEx(who, "Você não tem mais espaço na sua mochila.");
+	    endif
+	  endif
+    else
+      SendSysMessageEx(who, "Você queimou a comida!");
+      SubtractAmount(item, 1);
+    endif
+    foreach thing in theIngredients
+      DestroyItem(thing);
+    endforeach
+  else
+    SendSysMessageEx(who, "Você não pode cozinhar isto.");
+  endif
+endfunction
+
+
+function GetIngredients(who, ingredients)
+var words := {};
+var objtypes;
+var tgt;
+var result := {};
+
+  foreach list in ingredients
+  
+    words := SplitWords(list);
+    objtypes := {};
+    foreach word in words
+      objtypes.append(CInt(word));
+    endforeach
+    
+    SendSysMessageEx(who, "Escolha o igrediente para cozinhar isto.");
+    tgt := Target(who);
+    
+    if (tgt.objtype in objtypes)
+      SendSysMessageEx(who, "Boa escolha!");
+      result.append(tgt);
+    else
+      SendSysMessageEx(who, "Este não e o ingrediente correto!");
+      return error;
+    endif
+  endforeach
+
+  foreach item in result
+    if (!Accessible(who, item) || !ReserveItem(item))
+      SendSysMessageEx(who, "Você não pode usar isso!");
+      return error;
+    endif
+  endforeach
+
+  return result;
+
+endfunction

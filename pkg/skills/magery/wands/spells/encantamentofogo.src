@@ -1,0 +1,69 @@
+use uo;
+use os;
+use cfgfile;
+
+include "include/client";
+include "include/sounds";
+include "include/damage";
+include "include/say";
+include ":attributes:attributes";
+include ":magery:basicMagery";
+var fire_items := array{0x0a12, 0xfb1, 0x197a, 0x3709, 0x1f5, 0x1f4, 0x1f6, 0x1f7, 0x398C, 0x398D, 0x398E, 0x0DE3, 0x198A, 0xA12};
+
+program animateSword(params)
+	var who := params[1];
+	var spellinfo := params[2];
+	var targ := params[3];
+	params := 0; // No longer needed
+
+   var items_near := ListItemsNearLocationWithFlag( who.x, who.y, who.z, 4, TILEDATA_FLAG_LIGHTSOURCE);
+	
+   var item;
+   foreach item_n in items_near
+      if (item_n.graphic in fire_items)
+         item := item_n;
+      endif
+      sleepms(2);
+   endforeach
+
+   if (!item)
+      items_near := ListMobilesNearLocationEx( who.x, who.y, who.z, 5, LISTEX_FLAG_NORMAL);
+      foreach item_n in items_near
+         if (item_n.my_template() == "orb")
+            item := item_n;
+            break;
+         endif
+         sleepms(2);
+      endforeach
+   endif
+   
+   if (!item)
+      SendSysMessageEx(who, "Você ou o alvo precisa estar próximo de algum fogo", SSM_FAIL);
+      return 0;
+   endif
+
+   PrintText(item, "*Fogo se move de forma não natural*");
+   var shards := 2 + cint(spellinfo.powered);
+   var dmg_dice := MageDiceTable("B", 1);
+
+   var i;
+   for (i := 1; i <= shards; i+=1)
+	   PlayMovingEffect(item, targ, 0x36E4, 10, 3, 1);
+      PlaySoundEffect(item, 0x209);
+      var dmg := RandomDiceRoll(dmg_dice);
+      
+      if (rollResistDice(targ, DEXTERITY) > spellinfo.dice_roll+5)
+         dmg := dmg / 2;
+         SendSysMessageEx(who, "O alvo conseguiu evitar parte do dano.");
+         SendSysMessageEx(targ, "Você se esquiva e recebe metade do dano.");
+      endif
+
+      if (dmg < 1)
+         dmg := 1;
+      endif
+      DamageFLS(targ, dmg, "Fogo", who);
+      sleepms(750);
+	endfor
+
+	return 1;
+endprogram

@@ -1,0 +1,41 @@
+use uo;
+use os;
+
+include "include/say";
+
+program fazersuco(who, item)
+
+	var carregado := Cint(GetObjProperty(item, "carregado"));
+	//var carregado2 := Cint(GetObjProperty(item, "#carregadoagua"));
+	var doses := Cint(GetObjProperty(item, "doses"));
+
+	if (doses == 0) //se esta vazio
+		if ( (carregado == 1)) //se esta carregado
+			var passos := cint(GetObjProperty(item, "passos"));
+			var i;
+
+			if (passos >= 80) //se tem mtos passos adiciona 1 dose
+				SendSysMessageEx(who, "As uvas ja estao amassadas.");
+				SetObjProperty(item, "doses", 1);
+				SetObjProperty(item, "passos", 0);   
+				SetObjProperty(item, "carregado", 0);  
+			endif
+ 
+			//incrementa os passos
+			if (passos == 0) 
+				passos := 1;
+				SetObjProperty(item, "passos", passos);
+			else
+				i := passos;
+				passos := (i +1);
+				SetObjProperty(item, "passos", passos);
+			endif
+		else // se não ta carregado coloca as uvas
+			SendSysMessageEx(who, "Você precisa por as 50 uvas no balde, este balde esta vazio!");
+		endif
+	else //balde ta cheio
+		SendSysMessageEx(who, "Ei! Ainda tem suco aqui! Esvazie o balde!");
+	endif
+
+endprogram
+

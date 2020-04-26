@@ -1,0 +1,58 @@
+/*
+ * $Id: refresh.src 664 2005-10-27 03:36:13Z muaddiblsd $
+ *
+ */
+
+use uo;
+
+include ":attributes:attributes";
+
+program textcmd_RefreshVitals(who, text)
+   var accounts := ListAccounts();
+   foreach acc_name in accounts
+      var acc    := FindAccount(acc_name);
+      var mobile := acc.getcharacter(1);
+      mobile := SystemFindObjectBySerial(mobile.serial, SYSFIND_SEARCH_OFFLINE_MOBILES);
+      // var chardata := GetObjProperty(mobile, "chardata");
+      // chardata.exppoints := 0;
+      // chardata.Level := 1;
+      // chardata.attpoints := 0;
+      // chardata.talentpoints := 0;
+      // SetObjproperty(mobile, "chardata", chardata);
+      // MoveObjectToLocation(mobile, 4756, 3541, 1, who.realm, MOVEOBJECT_FORCELOCATION);
+      if (!GetObjProperty(mobile, "recriando"))
+         SetObjproperty(mobile, "re_stat", 1);
+      endif
+      sleepms(2);
+   endforeach
+
+	SendSysMessage(who, "Done.");
+endprogram
+
+
+// program textcmd_RefreshVitals(who, text)
+//    var accounts := ListAccounts();
+//    foreach acc_name in accounts
+//       var acc := FindAccount(acc_name);
+//       var mobile := acc.getcharacter(1);
+//       var feats := GetFeatList(mobile);
+//       foreach feat in feats
+//          removeFeat(mobile, feat);
+//          sleepms(2);
+//       endforeach
+
+//       mobile.SetTalentPoints(-10);
+//       var lvl := mobile.getLevel();
+//       if (lvl >= 2) mobile.SetTalentPoints(1); endif
+//       if (lvl >= 3) mobile.SetTalentPoints(1); endif
+//       if (lvl >= 6) mobile.SetTalentPoints(1); endif
+//       if (lvl >= 7) mobile.SetTalentPoints(1); endif
+
+//       var chardata := GetObjProperty(who, "chardata");
+//       chardata.class_feats := array{};
+// 	   SetObjProperty(who, "chardata", chardata);
+//       sleepms(2);
+//    endforeach
+
+// 	SendSysMessage(who, "Done.");
+// endprogram

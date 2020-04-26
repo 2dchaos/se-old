@@ -1,0 +1,494 @@
+/////////////////////////////////////////////
+//
+// combathook.src
+//
+// Combat System Hooks
+//
+// Created: 2/26/2004 1:13AM
+// Updated: 06/03/2007 1:13AM
+//
+// Responsavel por:
+//
+//
+////////////////////////////////////////////
+
+use uo;
+use cfgfile;
+
+include ":attributes:attributes";
+include ":combat:armorZones";
+include ":combat:combat";
+include "include/packets";
+include "include/facings";
+include "include/say";
+include "include/dungeons";
+include "include/damage";
+include "include/utils";
+include ":timedscripts:timedScripts";
+include ":combat:settings";
+include ":mounts:mounts";
+include ":fls_core:fls_characters";
+
+var item_cff  := ReadConfigFile(":*:itemdesc");
+
+//Global because they're important, and it keeps the function
+//prototypes shorter and easier to read.
+var wpn_a_elem;
+var weapon;
+var bonus_atk := 0;
+
+program Attack(params)
+   var attacker := params[1];
+   var defender := params[2];
+   var nofacecheck := cint(params[3]);
+	weapon := attacker.weapon;
+
+	if ( attacker == defender )
+		ApplyRawDamage(attacker, 5000);
+		return 1;
+   elseif (attacker.my_template() == "orb")
+      return 1;
+   elseif (defender.my_template() == "orb" && defender.master != attacker)
+      return 1;
+	elseif ( !CheckLineOfSight(attacker, defender) )
+		return 1;
+	elseif ( GetObjProperty(attacker, "#Casting") || TS_GetCooldown(attacker, "noattack") )
+		return 1;
+   elseif ( TS_GetTimerInfo(attacker, "charmed") )
+      if (GetObjProperty(attacker, "#charmed") == defender.serial)
+         return 1;
+      endif
+   elseif ( GetEquipmentByLayer(attacker, LAYER_MOUNT) )
+      if (AP_GetTrueSkill(attacker, MONTARIA) <= 4)
+         return 1;
+      endif
+	endif
+
+	if (attacker.acctname)
+		if (!attacker.warmode)
+			if(GetObjProperty(attacker, "#attackmsg") <= polcore().systime)
+				SendSysMessageEx(attacker, "Você precisa estar em modo de combate para ameaçar alguém.", SSM_FAIL);
+				SetObjProperty(attacker, "#attackmsg", polcore().systime+15);
+			endif
+			return 1;
+		endif
+	endif
+
+	wpn_a_elem := GetItemCFGInfo(attacker, weapon);
+	if ( attacker.frozen || attacker.paralyzed)
+		SendSysMessageEx(attacker, "Você não consegue atacar.", SSM_FAIL);
+		return 1;
+	elseif ( (attacker.concealed) && (attacker.cmdlevel == 0) )
+		attacker.concealed := 0;
+	elseif ( !DistanceChecks(attacker, defender) )
+		return 1;
+	elseif ( !FacingChecks(attacker, defender) && !nofacecheck )
+		return 1;
+	elseif ( !AmmoCheck(attacker, defender) )
+		return 1;
+   elseif ( attacker.hidden)
+      attacker.hidden := 0;
+		attacker.SetAchievement("sneak", 1);
+      if (rollAttrDice(defender, WISDOM) + GetSkillBonus(attacker, PERCEPCAO)  <= rollAttrDice(attacker, DEXTERITY) + GetSkillBonus(attacker, FURTIVIDADE))
+         SendSystemReport(attacker, "*Golpe Furtivo*", SSM_INFO);
+         bonus_atk += 1;
+      endif
+	endif
+
+	var attacker_roll := GetAttackerChance(attacker, defender);
+   if (weapon.isBow() && ((attacker_roll.critical < 0 && AP_GetTrueSkill(attacker, wpn_a_elem.Pericia) < 3) || TS_GetTimerInfo(attacker, "hallucination")))
+      SendSysMessageEx(attacker, "Você erra o alvo", SSM_FAIL);
+      var mobiles := ListMobilesNearLocation(defender.x, defender.y, defender.z, 2);
+      mobiles := RemoveFromArray(mobiles, attacker);
+      defender := mobiles.randomentry();
+      attacker_roll := GetAttackerChance(attacker, defender);
+   endif
+
+   var attack_chance := attacker_roll.dice;
+
+	var armor := CS_GetEquipmentInArmorZone(defender, CS_GetRandomArmorZone());
+	armor     := CS_SelectArmored(armor);
+
+	//Only calculate defender CA if fail/success is not sure
+	var defender_CA   := 0;
+	if (GetObjProperty(attacker, "#attackfail") == 1)
+		EraseObjProperty(attacker, "#attackfail");
+		defender_CA := 100;
+	elseif (GetObjProperty(defender, "#defensefail") == 1)
+		EraseObjProperty(defender, "#defensefail");
+	else
+		defender_CA := GetDefenderCA(defender, armor, attacker);
+	endif
+
+	//Arrow repulse magic
+	if (GetObjProperty(defender, "#arrowrepulse") == 1 && weapon.isBow())
+		defender_CA := 100;
+	endif
+
+	PlayAttackAnimation(attacker, wpn_a_elem);
+
+   if (wpn_a_elem.WeaponType)
+      attacker.SetAchievement(wpn_a_elem.WeaponType, 1);
+   endif
+
+   if ( GetEquipmentByLayer(defender, LAYER_MOUNT) )
+      var roll_mount := rollAttrDice(defender, DEXTERITY) + getSkillBonus(defender, MONTARIA);
+      if (roll_mount <= 23)
+         MP_UnMount(defender);
+      endif
+   endif
+
+	//ACERTOU
+	if ( attack_chance > defender_CA )
+		// if ( HaveFeat(attacker, "golpedesleal") && IsBehind(attacker, defender.x, defender.y) )
+		// 	if (RandomInt(10) < 3)
+		// 		TS_StartTimer(defender, "paralysis", 2);
+		// 	enew\a1,f
+		// endif
+		WearDownWeapon(attacker);
+		PlayHitSounds(attacker, defender);
+		var dmg := CalculateRawDamage(attacker, wpn_a_elem, attacker.weapon);
+		ExpGain(attacker, defender_CA, attack_chance);
+
+		if (!defender.npctemplate && defender.shield)
+         if (wpn_a_elem.ProjectileAnim)
+            defender.SetAchievement("ragendshield", 1);
+         else
+			   defender.SetAchievement("shield", 1);
+         endif
+		endif
+
+      attacker_roll.two_dice_success := (attacker_roll.two_dice > defender_CA);
+		Run_Script_To_Completion(":combat:mainHitScript", array{attacker, defender, weapon, armor, dmg, attacker_roll, wpn_a_elem });
+
+	else //ERROU O ATAQUE
+		if ( weapon.isBow() && !attacker.npctemplate )
+			ArrowRecovery(attacker, defender);
+		endif
+
+		EraseObjProperty(attacker, "movement");
+
+      if (!defender.npctemplate && defender.shield)
+         WearDownArmor(defender, defender.shield);
+      elseif (!defender.npctemplate && armor)
+		   WearDownArmor(defender, armor);
+      endif
+
+		var armor_elem := GetItemCFGInfo(defender, armor);
+		// Com armadura leve tem 40% de chance de dar miss
+		if ((!armor_elem.ArmorDexLimit && RandomInt(100) <= 20) || RandomInt(100) <= 20)
+			PlayMissSound(attacker);
+		else
+			PlayHitSounds(attacker);
+			WearDownWeapon(attacker);
+		endif
+	endif
+
+	return 1;
+endprogram
+
+// Rola o dado de ataque
+function GetAttackerChance(attacker, defender)
+	var dice_gain := bonus_atk;
+	if ( !attacker.npctemplate )
+		if ( GetEquipmentByLayer(attacker, LAYER_MOUNT))
+			dice_gain -= 1;
+		endif
+
+      if (weapon.isBow())
+         if (!HaveLightNear(defender))
+            attacker.SetAchievement("shoot_night", 1);
+            dice_gain -= 1;
+         endif
+
+         if (wpn_a_elem.medrange)
+            if (Distance(attacker,defender) > cint(wpn_a_elem.medrange))
+               dice_gain -= 1;
+            endif
+         endif
+      endif
+
+      if (weapon.isMagicWeapon())
+         if (!HaveLightNear(defender))
+            dice_gain -= 1;
+         endif
+      endif
+	endif
+
+	if (GetObjProperty(attacker, "#attackbonus" ) || GetObjProperty(attacker, "hitbonus") )
+		dice_gain += 1;
+	endif
+
+   if (GetObjProperty(attacker, "#attack_disadvantage") || GetObjProperty(attacker, "#blinded"))
+		dice_gain -= 1;
+   endif
+
+   // if (HaveFeat(attacker, "Primeiro Golpe"))
+   //    var hited := GetObjProperty(defender, "#hited");
+   //    if (!hited) hited := array{}; endif
+   //    if (!(attacker.serial in hited))
+   //       dice_gain += 1;
+   //       hited.append(attacker.serial);
+   //       SetObjProperty(defender, "#hited", hited);
+   //    endif
+   // endif
+
+	if (!IsFacing(defender, attacker.x, attacker.y))
+      if (AP_GetTrueSkill(defender, ARMADURA_PESADA) < 7 )
+		   dice_gain += 1;
+      endif
+      
+		if (!defender.npctemplate)
+			defender.SetAchievement("backstabed", 1);
+		endif
+
+		if (!attacker.npctemplate)
+			attacker.SetAchievement("backstab", 1);
+		endif
+	endif
+
+   dice_gain += GetAttackerFeatPenalty(attacker, defender);
+   
+   var marca := GetObjProperty(attacker, "#marca_inabalavel");
+   if (marca && marca != defender.serial)
+      dice_gain := -1;
+   endif
+
+
+	var attribute := "Strength";
+	var bonus := 0;
+	if (!attacker.npctemplate)
+		// Verifica se arma tem atributo
+		attribute := SelectAttribute(attacker, attacker.weapon);
+		// Checa Pericia
+		if (wpn_a_elem.Pericia)
+			bonus := cint(GetSkillBonus(attacker, wpn_a_elem.Pericia));
+		endif
+	else
+		// Pega atributo principal do npc
+		if (wpn_a_elem.Attribute)
+			attribute := wpn_a_elem.Attribute;
+		endif
+		bonus := cint(wpn_a_elem.hitbonus);
+	endif
+
+   if (TS_GetTimerInfo(attacker, "golpeduplo_actv"))
+      bonus -= 2;
+   endif
+   // bonus += GetAttackerFeatBonus(attacker, 0);
+	
+	var roll := rollAttrDice(attacker, attribute, dice_gain, struct{ "get_critical" := 1});
+   roll.dice += bonus;
+	return roll;
+endfunction
+
+
+
+function GetDefenderCA(defender, armor, attacker)
+	var CA := 5;
+	if ( !defender.npctemplate )
+		if (armor)
+			CA := armor.ar_base + armor.ar_mod; //se é armadura `ada, n tem dex
+
+			var armor_elem := GetItemCFGInfo(defender, armor);
+			if (armor_elem.Pericia == ARMADURA_LEVE)
+            defender.SetAchievement("lightarmor", 1);
+				CA += GetBonusAttr(AP_GetTrueStat(defender, "Dexterity"));
+			elseif (armor_elem.Pericia == ARMADURA_MEDIA)
+            defender.SetAchievement("mediumarmor", 1);
+				var mod := GetBonusAttr(AP_GetTrueStat(defender, "Dexterity"));
+				if (mod > 2) //max de mod é 2 pra média
+					mod := 2;
+				endif
+
+				CA += mod;
+         elseif (armor_elem.Pericia == ARMADURA_PESADA)
+            defender.SetAchievement("heavyarmor", 1);
+			endif
+
+         if (defender.Caracteristica("Homem de Aço"))
+            CA += 1;
+         endif
+		else
+			// Se n tem armadura, usa defesa
+			CA := 10 + GetBonusAttr(AP_GetTrueStat(defender, "Dexterity"));
+		endif
+
+		if (defender.shield && !defender.npctemplate)
+			CA += defender.shield.ar_base + defender.shield.ar_mod;
+		endif
+
+      if (!defender.npctemplate && !attacker.npctemplate)
+         attacker.SetAchievement("player_attack", 1);
+      endif
+
+      var wpn_elem := GetItemCFGInfo(defender, defender.weapon);
+      if (defender.weapon.Pericia == ARMAS_DUPLAS && AP_GetTrueSkill(defender, ARMAS_DUPLAS) >= 6)
+         CA += 1;
+      endif
+	else
+		var npcelem := NPC_GetNPCConfig(defender.npctemplate);
+		CA := cint(npcelem.AR);
+	endif
+
+	var ca_bonus := cint(GetObjProperty(defender, "bonus_ca"));
+	if (ca_bonus)
+		CA += ca_bonus;
+	endif
+
+	return CA;
+endfunction
+
+function WearDownArmor(defender, armor)
+	if ( armor )
+		var armr_elem := CS_GetSettingsCfgElem("Armor");
+		var wearchance := armr_elem.WearChance;
+		// if ( HaveFeat(defender, "Conservar Equipamento"))
+		// 	wearchance := wearchance/2;
+		// 	if (wearchance < 1)
+		// 		wearchance := 1;
+		// 	endif
+		// endif
+
+		if ( RandomDiceRoll("1d100") <= wearchance )
+			SendSysMessageEx(defender, "Seu equipamento foi danificado.");
+			var armorhp := armor.hp;
+			armorhp := armorhp - Cint(armr_elem.WearRate);
+			if ( armorhp <= 0 )
+				armor.hp := 0;
+				SendSysMessageEx(defender, armor.desc+" foi destruida.");
+				SetName(armor, armor.desc);
+				MoveItemToContainer(armor, defender.backpack);
+			elseif ( armor.hp > armor.maxhp )
+				armor.hp := armor.maxhp;
+			else
+				armor.hp := armorhp;
+            SetName(armor, armor.desc);
+			endif
+		endif
+	endif
+	
+	return 1;
+endfunction
+
+function WearDownWeapon(attacker)
+	if ( weapon.IsA(POLCLASS_WEAPON) && !attacker.npctemplate)
+		if ( weapon.objtype == 0x1F020)
+			return 1;
+		endif
+		var wpn_elem := CS_GetSettingsCfgElem("Weapons");
+		var wearchance := CInt(wpn_elem.WearChance);
+		var roll := RandomDiceRoll("1d100");
+		if ( roll <= wearchance )
+			var weaponhp := weapon.hp - 1;				
+			if ( weaponhp <= 0 )
+				weapon.hp := 0;
+				SendSysMessageEx(attacker, weapon.desc+" quebrou.");
+				MoveObjectToLocation(weapon, 1, 1, 1, attacker.realm, MOVEOBJECT_FORCELOCATION);
+				SetName(weapon, weapon.desc);
+				MoveItemToContainer(weapon, attacker.backpack);
+			elseif ( weapon.hp > weapon.maxhp )
+				weapon.hp := weapon.maxhp;
+			else
+				weapon.hp := weaponhp;
+            SetName(weapon, weapon.desc);
+			endif
+		endif
+		return 1;
+	endif
+
+	return 0;
+endfunction
+
+// Checa por munição ou faz efeito do npc arqueiro
+function AmmoCheck(attacker, defender)
+   var cfgfile := NPC_GetNPCConfig(attacker);
+	if (weapon.isMagicWeapon())
+		PlayMovingEffectEx(attacker, defender, cint(wpn_a_elem.ProjectileAnim), 5, 10, cint(wpn_a_elem.ProjectileColor));
+		return 1;
+	elseif ( !weapon.isBow() && !cfgfile.Ranged)
+		return 1;
+	endif
+
+	if(attacker.npctemplate)
+      if (wpn_a_elem.ProjectileAnim)
+		   PlayMovingEffectEx(attacker, defender, cint(wpn_a_elem.ProjectileAnim), 10, 10, cint(wpn_a_elem.ProjectileColor));
+      elseif (cfgfile.AttackTargetAnim)
+         PlayObjectCenteredEffectEx( defender, cint(cfgfile.AttackTargetAnim), 10, 20, cint(cfgfile.ProjectileColor));
+      else
+		   PlayMovingEffectEx(attacker, defender, cint(cfgfile.ProjectileAnim), 10, 10, cint(cfgfile.ProjectileColor));
+      endif
+
+		return 1;
+	endif
+
+	var aljava := GetEquipmentByLayer(attacker, LAYER_CAPE);
+	var ammo   := GetObjProperty(weapon, "ammo");
+	if (!ammo)
+		SendSysMessageEX(attacker, "Você não definiu o tipo de flecha que vai usar. [clique 2x no arco e na flecha]", SSM_FAIL);
+		return 0;
+	elseif ( !ConsumeSubstance( aljava, ammo, 1 ) )
+		SendSysMessageEX(attacker, "Sua flecha acabou ou está fora da aljava.", SSM_FAIL);
+		return 0;
+	endif
+
+   var cfg  := ReadConfigFile(":woodworking:itemdesc");
+   var elem := FindConfigElem(cfg, ammo);
+   var ammo_color := cint(elem.color);
+   PlayMovingEffectEx(attacker, defender, cint(wpn_a_elem.ProjectileAnim), 10, 10, 0, ammo_color);
+   return 1;
+endfunction
+
+// Cria as munição no chão
+function ArrowRecovery(attacker, defender)
+	var chance := 15;
+   if (HaveFeat(attacker, "Flechas Intactas"))
+      chance := 70;
+   endif
+   
+	if ( RandomDiceRoll("1d100") <= chance )
+		var ammo := GetObjProperty(weapon, "ammo");
+		var point := RandomPlace(defender, 1);
+		CreateItemAtLocation(point.x, point.y, defender.z, ammo, 1, defender.realm);
+	endif
+endfunction
+
+// Checa direção q ta olhando
+function FacingChecks(attacker, defender)
+	var retval := 1;
+	if ( !IsFacing(attacker, defender.x, defender.y) )
+		if ( attacker.npctemplate )
+			TurnObjectToward(attacker, defender.x, defender.y);
+		else
+			if ( IsBehind(attacker, defender.x, defender.y) )
+				SendSysMessageEx(attacker, "Você está de costas para o inimigo!", SSM_FAIL);
+				retval := 0;
+			endif
+		endif
+	// elseif ( !IsFacing(defender, attacker.x, attacker.y) )
+		// if ( defender.npctemplate )
+		// 	TurnObjectToward(defender, attacker.x, attacker.y);
+		// endif
+	endif
+
+	return retval;
+endfunction
+
+function GetAttackerFeatPenalty(attacker, defender)
+   var bonus := 0;
+   if (defender.acctname && attacker.npctemplate) //mob vs player
+      var mobiles_near := ListMobilesNearLocationEx(defender.x, defender.y, defender.z, 2, LISTEX_FLAG_NORMAL|LISTEX_FLAG_PLAYERS_ONLY);
+      foreach mob in mobiles_near
+         if (mob.shield && AP_GetTrueSkill(mob, ESCUDO) >= 7)
+            bonus -= 1;
+            break;
+         endif
+      endforeach
+   endif
+
+   if (GetObjProperty(defender, "#assassinate") == attacker.serial)
+      bonus += 1;
+   endif
+
+   return bonus;
+endfunction

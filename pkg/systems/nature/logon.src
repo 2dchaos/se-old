@@ -1,0 +1,8 @@
+
+use os;
+
+program logon(who)
+
+	start_script("seasonaleffects", {who});
+	sleep(1);
+endprogram

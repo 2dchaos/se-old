@@ -1,0 +1,62 @@
+/*
+Created by *Edwards
+
+Last Modifications 2009-10-18
+* Cleaned codes for better performances
+* Removed while loop if rune is in containers so might nt work if items is inside containers...
+*/
+use uo;
+use os;
+use util;
+
+include "include/sounds";
+include "include/say";
+
+program SoundPlay( rune )
+   while( rune )
+      var is_active := 0;
+      while( rune.GetSounds() )
+         if( !is_active )
+            rune.ActivateAmbience();
+            is_active := 1;
+         endif
+
+         var delay := cint(rune.GetDelay());
+         if( !delay )
+            PrintText( rune, "Error reading delay for a sound_rune -->"+delay.errortext );
+            break;
+         endif
+
+         var range := cint(rune.GetRange());
+         if( !range )
+            PrintText( rune, "Error reading range for a sound_rune -->"+range.errortext );
+            break;
+         endif
+
+         var sound_list := rune.GetSounds();
+         if( !sound_list || typeof(sound_list) != "Array" )
+            PrintText( rune, "Error reading sounds for a sound_rune -->"+sound_list.errortext );
+            break;
+         endif
+
+         var effect := sound_list.RandomEntry();
+         if( !effect )
+            PrintText( rune, "Error reading sound effect for a sound_rune -->"+effect.errortext );
+            break;
+         endif
+
+         PrintText(rune, "playando");
+         var mobile_list := ListMobilesNearLocationEx(rune.x, rune.y, LIST_IGNORE_Z, range, LISTEX_FLAG_NORMAL|LISTEX_FLAG_HIDDEN|LISTEX_FLAG_CONCEALED|LISTEX_FLAG_PLAYERS_ONLY);
+         foreach mobile in mobile_list
+            PlaySoundEffectPrivate( mobile, cint(effect), mobile);
+            sleepms(2); 
+         endforeach
+
+         Sleep( delay );
+      endwhile
+
+      Sleep( 30 );
+   endwhile
+
+   return 1;
+endprogram

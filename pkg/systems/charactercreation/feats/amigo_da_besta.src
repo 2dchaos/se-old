@@ -1,0 +1,37 @@
+use os;
+
+include "include/say";
+include ":timedscripts:timedScripts";
+include ":ghaia:ghaiaUtil";
+
+program startTalent(param)
+   var who := param[1];
+   var talent_name := param[2];
+   var res := amigobesta(who);
+
+   if (!res)
+      TS_LowerDuration(who, talent_name, -1, 1);
+   endif
+endprogram
+
+function amigobesta(who)
+   SendSysMessageEx(who, "Qual animal você deseja acalmar?", SSM_REQUEST);
+   var targ := Target(who);
+
+   if (!targ || !targ.isA(POLCLASS_NPC))
+      SendSysMessageEx(who, "Cancelado.", SSM_INFO);
+      return 0;
+   endif
+   var npcdesc := NPC_GetNPCConfig(targ);
+   if (lower(npcdesc.Category) != "besta")
+      SendSysMessageEx(who, "Só pode acalmar bestas.", SSM_INFO);
+      return 0;
+   elseif (GetObjProperty(targ, "#peacemade") )
+      SendSysMessageEx(who, "A criatura já está pacificada.", SSM_INFO);
+      return 0;
+   endif
+
+   TS_StartCooldown(targ, "peacemade", 300);
+   ghaiaPeaceMade(who, targ);
+   return 1;
+endfunction

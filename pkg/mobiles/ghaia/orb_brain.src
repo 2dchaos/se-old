@@ -1,0 +1,146 @@
+use uo;
+use os;
+use npc;
+use util;
+
+include ":attributes:attributes";
+include "include/sysEvent";
+include "include/say";
+include ":mounts:mounts";
+include ":taming:taming";
+include ":tn:cooldown";
+include ":ghaia:generic";
+include ":ghaia:objective";
+include ":timedscripts:timedScripts";
+
+var me        := self();
+var wait_time := 1;
+
+program NPCMonitor()
+   set_critical(1);
+   SetWarMode( 0 );
+   var is_golem := me.my_template()["golem"];
+   var is_eagle := me.my_template()["aguia"];
+   me.enable( "invul" );
+   var damage_transfer;
+
+   while (me)
+      sleep(wait_time);
+      if (is_golem)
+         if (me.opponent)
+            Follow(me.opponent);
+            if (Distance(me, me.opponent) <= 2)
+               NPC_Agarrar(RandomDiceRoll("1d5"), me.opponent, GetObjProperty(me, "agarrar_dif")+5);
+            endif
+         else
+            var master := me.master;
+            if (master.opponent)
+					SetOpponent(master.opponent);
+            else
+               var hostiles := ListHostiles(master, 10);
+               if (hostiles[1])
+					   SetOpponent(hostiles[1]);
+               endif
+            endif
+         endif
+         wait_time := 0;
+      elseif(is_eagle)
+      elseif (me.master && !GetObjProperty(me, "no_follow"))
+         Follow(me.master);
+      endif
+
+      sleepms(2);
+
+      if (!TS_GetTimerInfo(me, "summon") && !TS_GetTimerInfo(me, "dynamickill")) 
+         ApplyRawDamage(me, 200);
+      endif
+
+      if (damage_transfer)
+         var mob := SystemFindObjectBySerial(damage_transfer);
+         if (Distance(me, mob) > 14)
+            ApplyRawDamage(me, 200);
+         endif
+      endif
+      damage_transfer := GetObjProperty(me, "damage_transfer");
+   endwhile
+endprogram
+
+function Follow(character := 0)
+   if ( character == me || !character.IsA(POLCLASS_MOBILE) || character.hidden || character.concealed )
+      return;
+   endif
+
+   var dist := Distance(me, character);
+
+   if( dist <= 2 )
+      if (RandomInt(5) == 1)
+         PerformAction(me, 0x0f);
+      elseif (RandomInt(5) == 1)
+         PerformAction(me, 0x10);
+      endif
+      wait_time := 1;
+   elseif( dist > 25 )
+      wait_time := 10;
+   elseif ( dist > 4 )
+      RunToward(character);
+      wait_time := 0;
+   else
+      WalkToward(character);
+      wait_time := 0;
+   endif
+endfunction
+
+
+function NPC_Agarrar(dice, targ, difficulty)
+   if (Distance(me, targ) > 2)
+      return 0;
+   endif
+
+   PrintTexT(me, "*tenta agarrar {}*".format(targ.name));
+   if (rollResistDice(targ, DEXTERITY) <= difficulty)
+      PrintText(targ, "*agarrado*", SSM_FAIL);
+
+      TS_StartTimer(targ, "paralysis", dice);
+      TS_StartTimer(me, "paralysis", dice);
+      MoveObjectToLocation(me, targ.x, targ.y, targ.z, targ.realm, MOVEOBJECT_FORCELOCATION);
+      for i := 1 to dice
+         if (!me)
+            return;
+         endif
+         sleep(1);
+         DamageFLS(targ, RandomDiceRoll("1d4"), DMG_BLUDGE, me.owner);
+      endfor
+   else
+      PrintText(targ, "*resistido*".format(me.name), SSM_INFO);
+   endif
+
+   PrintText(me, "*Se desfaz*");
+   sleep(1);
+   ApplyRawDamage(me, 10000);
+   
+   return 1;
+endfunction
+
+function DeliverMessage(who)
+   if (who.serial != GetObjProperty(me, "msg_player"))
+      return;
+   endif
+
+   var messages := GetMessages(who.serial);
+   var rem_indexes := array{};
+   foreach msg in messages
+      if (msg.urgent)
+         rem_indexes.append(_msg_iter);
+         CreateIteminBackpackFromTemplate(who, msg.item);
+      endif
+      sleepms(2);
+   endforeach
+
+   removeIndexes(messages, rem_indexes);
+   UpdateMessages(who.serial, messages);
+
+   me.Disable("invul");
+   SetObjProperty(me, "GuardKill", 1);
+   SetObjProperty(me, "NoCorpse", 1);
+   ApplyRawDamage(me, 500);
+endfunction

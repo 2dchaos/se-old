@@ -1,0 +1,92 @@
+/*
+ * @AUTHOR   Steven Jimenez [SMJ]
+ * @DATE   October 29, 2006
+ *
+ * @NAME   flip.src
+ * @VERSION   2.0
+ *
+ * @PARAM[me]   Can contain a character reference, or an array
+ *      holding a character reference and the object to
+ *      be flipped.
+ *
+ * @RETURN   1 on completion.
+ *       0 on failure.
+ */
+
+use cfgfile;
+use os;
+use uo;
+
+include "include/say";
+
+CONST FLIP_CONFIG_FILE := (":*:flip");
+
+program textcmd_flip (me)
+   var flip_config := ReadConfigFile(FLIP_CONFIG_FILE);
+   var object;
+   var who;
+   var flip_graphic;
+
+   if(!flip_config)
+      SysLog("Error: "+FLIP_CONFIG_FILE+" não existe!");
+      return 0;
+   elseif( TypeOf(me) == TypeOf( array{} ) )
+      object := me[2];
+      who := me[1];
+   else
+      who := me;
+      SendSysMessageEx(who, "Girar o que?");
+      object := Target(who);
+   endif
+
+   if( !object )
+      SendSysMessageEx(who, "Cancelado.");
+      return 0;
+   endif
+
+   if( !(object.isA(POLCLASS_ITEM)) )
+      SendSysMessageEx(who, "Você não pode girar isso!");
+      return 0;
+   endif
+   
+   if( object.movable == 0 && who.cmdlevel < 3)
+      SendSysMessageEx(who, "O objeto esta fixo.");
+      return 0;
+   endif
+
+   var object_graphic := object.graphic;
+   var new_obj_graphic := object_graphic;
+   var graphic_array := array{};
+   var i := 1;
+
+   do
+      i += 1;
+      new_obj_graphic := GetConfigInt(flip_config[CInt(new_obj_graphic)], "ChangeTo");
+      if (!new_obj_graphic) break; endif
+
+      graphic_array.append(cint(new_obj_graphic));
+      sleepms(2);
+   dowhile( (object_graphic != new_obj_graphic) && (i < 10) );
+
+   if (graphic_array.size() == 0)
+      SendSysMessageEx(who, "Não é possível girar isso.", SSM_FAIL);
+   endif
+
+   var flip_menu := CreateMenu("Selecione a nova orientacao:");
+   var j;
+   foreach grap in graphic_array
+      AddMenuItem(flip_menu,CInt(grap),object.name);
+      sleepms(2);
+   endforeach
+
+   var selection := SelectMenuItem2(who,flip_menu);
+   if(!selection)
+      SendSysMessageEx(who, "Cancelado.");
+      return 0;
+   endif
+
+   flip_graphic := CInt(selection.graphic);
+
+   object.graphic := flip_graphic;
+   return 1;
+endprogram

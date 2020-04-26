@@ -1,0 +1,29 @@
+use uo;
+use os;
+
+include "include/say";
+include "include/client";
+include ":death:death";
+include ":tn:cooldown";
+include ":timedscripts:timedScripts";
+
+program LogOn(who)
+	if (who.dead)
+		checkdeath(who);
+	endif
+endprogram
+
+function checkdeath(ghost)
+	var corpse := ghost.GetCorpse();
+	if (CInt(GetObjProperty(ghost, "morto")) || CInt(GetObjProperty(corpse, "morto")))
+      start_script(":death:deathgump", array{corpse, ghost});
+		return 0;
+	endif
+
+	EraseObjProperty(corpse, "japrolongou");
+   if (corpse)
+      start_script("plyrdeath", array{corpse, ghost});
+   else
+      start_script("dowakeup", array{corpse, ghost});
+   endif
+endfunction

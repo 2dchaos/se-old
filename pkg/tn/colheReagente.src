@@ -1,0 +1,50 @@
+use uo;
+use util;
+use os;
+include ":charactercreation:feats";
+include "include/say";
+
+program colheReagente(who, item)
+
+	if (!Accessible(who, item))
+		SendSysMessageEX(who, "Você não alcança este item.", SSM_FAIL);
+		return 1;
+	endif
+	
+	var amt := 1;
+	
+	// if (HaveFeat(who, "Herbalista Experiente"))
+	// 	if (RandomInt(100) < 30)
+	// 		amt := 2;
+	// 	endif
+	// endif
+
+	var newitem;
+	if (item.objtype == 6368)
+		newitem := CreateItemInBackpack(who, 0x18DE, 1);
+	elseif (item.objtype == 6370)
+		newitem := CreateItemInBackpack(who, 0x18E4, 1);
+	elseif (item.objtype == 6373 )
+		newitem := CreateItemInBackpack(who, 0x18E8, 1);
+	elseif (item.objtype == 6378)
+		newitem := CreateItemInBackpack(who, 0x18EC, 1);
+	elseif (item.objtype == 6366)
+		newitem := CreateItemInBackpack(who, 0xF86, amt);
+	elseif (item.objtype == 6372)
+		newitem := CreateItemInBackpack(who, 0xF84, amt);
+	elseif (item.objtype == 6376)
+		newitem := CreateItemInBackpack(who, 0xF88, amt);
+	elseif ( item.objtype == 6380)
+		newitem := CreateItemInBackpack(who, 0xF85, amt);
+	endif
+	
+	
+	if (!item)
+		SendSysMessageEX(who, "Você não tem espaço na sua mochila.", SSM_FAIL);
+		return;
+	else
+		SendSysMessageEX(who, "Você colheu a planta", SSM_INFO);
+		DestroyItem(item);
+	endif
+
+endprogram

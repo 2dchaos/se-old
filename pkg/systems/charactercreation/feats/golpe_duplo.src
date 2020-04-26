@@ -1,0 +1,35 @@
+use os;
+
+include "include/say";
+include ":timedscripts:timedScripts";
+include ":ghaia:ghaiaUtil";
+
+program startTalent(param)
+   var who := param[1];
+   var talent_name := param[2];
+   var res := golpeduplo(who);
+   var stam := param[3].stam;
+
+   if (!res)
+      TS_LowerDuration(who, talent_name, -1, 1);
+      HealStamina(who, stam);
+   endif
+endprogram
+
+function golpeduplo(who)
+   var itemcfg := ReadConfigFile(":combat:itemdesc");
+   if (itemcfg[who.weapon.objtype].Pericia != ESGRIMA)
+		SendSysMessageEx(who, "Você precisa estar usando uma arma de esgrima.", SSM_INFO);
+      return 0;
+   elseif (!who.opponent || Distance(who, who.opponent) > 1)
+      SendSysMessageEx(who, "Não há oponente ou ele está muito distante.", SSM_FAIL);
+      return 0;
+   endif
+
+   TS_StartCooldown(who, "golpeduplo_actv", 2);
+   PlaySoundEffect(who, 0x51F);
+   who.attack_once(who.opponent);
+   sleepms(550);
+   who.attack_once(who.opponent);
+   return 1;
+endfunction

@@ -1,0 +1,29 @@
+/*
+   Created by *Edwards
+   For FantasiaShard.com
+
+   Edwards@FantasiaShard.com
+
+   2009-01-03
+
+   Last maintenance 2010-08-04
+*/
+use uo;
+use os;
+
+include ":email:email";
+include "include/say";
+
+var user_serial;
+
+program EmailMessage( params )
+   var mobile := params[1];
+   var dest := params[2];
+   var extra := params[3];
+   var subject := params[4];
+   if (!subject) subject := ""; endif;
+   
+   user_serial := mobile.serial;
+
+   NewLetter(mobile, dest, subject, array{}, extra);
+endprogram

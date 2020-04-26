@@ -1,0 +1,53 @@
+/* $Id: ondelete.src 1371 2006-05-12 23:55:57Z austin $
+ *
+ * Purpose
+ * This script allows the scripter to run code when a character is deleted.
+ *
+ */
+use uo;
+use os;
+use storage;
+
+include ":timeUtils:time";
+include ":attributes:attributes";
+include ":faccao:faccao";
+
+program core_onDelete(who)
+	var create_time := who.createdat;
+   var acc := FindAccount(who.acctname);
+	var age := cint(GetObjProperty(who, "createdate"));
+
+	if ( who.cmdlevel || acc.defaultcmdlevel > 0 )
+		var followers := Getobjproperty(who, "followers");
+		foreach pet in followers
+			SetObjProperty(pet, "GuardKill", 1);
+			ApplyDamage(pet, 9999);
+		endforeach
+
+		return 1;
+	elseif ( age >= SECONDS_IN_WEEK || Getobjproperty(who, "morto") || who.acctname == "test" )
+		SysLog("Account ["+who.acctname+"] deleting character "+who.name+" ("+who.serial+")");
+		
+		var followers := Getobjproperty(who, "followers");
+		foreach pet in followers
+			SetObjProperty(pet, "GuardKill", 1);
+			ApplyRawDamage(pet, 9999);
+		endforeach
+
+      if (who.GetLevel() >= 8)
+         acc.SetProp("expboost", 4);
+      elseif (who.GetLevel() >= 5)
+         acc.SetProp("expboost", 3);
+      elseif (who.GetLevel() >= 3)
+         acc.SetProp("expboost", 2);
+      endif
+
+      if (who.guild)
+         RemMember(who.guild, who);
+      endif
+
+		return 1;
+	else
+		return 0;
+	endif
+endprogram

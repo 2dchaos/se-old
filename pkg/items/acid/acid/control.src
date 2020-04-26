@@ -1,0 +1,33 @@
+/* $Id: control.src 984 2005-11-14 09:02:34Z muaddiblsd $
+ *
+ */
+use uo;
+use os;
+include ":acid:acid";
+
+program ControlScript(acid)
+   sleep(1);
+   var owner := GetObjProperty(acid, "owner");
+   if (owner)
+      owner := SystemFindObjectBySerial(owner);
+   endif
+
+   var i := 0;
+   while(acid && i <= 5)
+      var mobiles := ListMobilesNearLocation( acid.x, acid.y, acid.z, 0);
+      foreach mob in mobiles
+         sleepms(2);
+         if (owner)
+            if (CheckifIsAlly(owner, mob))
+               continue;
+            endif
+         endif
+         if( !DealAcidDamage(acid, mob, acid) )
+            DealAcidDamage(acid, mob, acid, "5d2");
+         endif
+      endforeach
+      sleep(10);
+      i+=1;
+   endwhile
+	DestroyItem(acid);
+endprogram

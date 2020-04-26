@@ -1,0 +1,62 @@
+use uo;
+use os;
+
+include "include/say";
+include "include/sounds";
+include ":attributes:attributes";
+
+program blessWater(info)
+   var who := info[1];
+   var dice_roll := info[2].dice_roll;
+   var targ := info[3];
+   info := 0;
+
+   var itemdesc := ReadConfigFile(":combat:itemdesc") + ReadConfigFile(":womenswork:itemdesc");
+   
+	while (1)
+      if (!targ)
+			SendSysMessageEX(who, "Cancelado", SSM_FAIL);
+         return 1;
+      elseif (!targ.isA(POLCLASS_ITEM) || !itemdesc[targ.objtype] )
+			SendSysMessageEX(who, "Você deve escolher uma arma ou armadura!", SSM_FAIL);
+      else
+         break;
+		endif
+		targ := target(who);
+      sleepms(2);
+	endwhile
+
+   if (targ.quality <= 0.1 || !targ.quality)
+		SendSysMessageEX(who, "Esse objeto não pode ser consertado nem por milagres.", SSM_FAIL);
+      return 0;
+   endif
+
+   var fix_amount := 5 + (AP_GetTrueSkill(who, MILAGRE_DE_CURA) * 5);
+   if (fix_amount > 5)
+      fix_amount := 5;
+   elseif (fix_amount < 1)
+      fix_amount := 1;
+   endif
+
+   fix_amount := dice_roll + fix_amount;
+   if (targ.hp + fix_amount > targ.maxhp)
+      targ.hp := targ.maxhp;
+      fix_amount := 0;
+   else
+      targ.hp := fix_amount+targ.hp;
+   endif
+
+   if(randomint(2) == 1)
+      targ.quality := targ.quality - (fix_amount/100);
+   endif
+
+   SetName(targ, targ.desc);
+
+   if (!targ.container)
+      PlayStationaryEffect(targ.x, targ.y, targ.z+1, 0x5683, 2, 5);
+   endif
+
+   PlaySoundEffect(targ, SFX_SPELL_CREATE_FOOD);
+   SendSystemReport(targ, "*Você restaura o equipamento*", SSM_HELPFUL);
+   return 1;
+endprogram

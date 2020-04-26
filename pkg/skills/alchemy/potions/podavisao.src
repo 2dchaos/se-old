@@ -1,0 +1,42 @@
+use os;
+use uo;
+use util;
+use cfgfile;
+include ":alchemy:alchemy";
+include "include/say";
+include "include/utils";
+
+program poDaVisao(who, potion)
+	if (!CheckIfCanDrink(who, potion, 0, 0))
+		return;
+	endif
+
+	EmptyBottle(who, potion);
+
+	SendSysMessageEX(who, "Você espalhou o po ao redor.", SSM_INFO);
+	PrintText(who, "*espalha um fino pó ao redor de si*");
+	PlaySoundEffect(who, 0x0248);
+	sleepms(200);
+	PlaySoundEffect(who, 0x0248);
+	var rect := GetPointsInRadius(who.x, who.y, 2);
+	foreach coord in rect
+		PlayStationaryEffect(coord.x, coord.y, who.z, 0x3728, 35, 35);
+		sleepms(3);
+	endforeach
+	//Give hidden people a chance to sneak away.
+	sleepms(600);
+
+	foreach coord in rect
+		foreach mobile in ListMobilesNearLocationEX(coord.x, coord.y, who.z, 2, LISTEX_FLAG_HIDDEN)
+			if (who.hidden)
+				SendSysMessage(mobile, "A poeira revelou você.");
+				mobile.hidden := 0;
+				TS_StartCooldown(mobile, "revealed", 15);
+			endif
+			sleepms(2);
+		endforeach
+		sleepms(2);
+	endforeach
+
+
+endprogram

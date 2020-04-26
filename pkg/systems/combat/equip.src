@@ -1,0 +1,175 @@
+use uo;
+use os;
+use cfgfile;
+
+include ":tn:equipment";
+include ":tn:cooldown";
+include "include/say";
+
+program equipweapon(who, item, startup)
+   if (startup)
+      return 1;
+   endif
+   
+	var descmod_item:= GetObjProperty(item,"descmod");
+
+	if(descmod_item != error)
+		var descmod := GetObjProperty(who,"descmod");
+		if (!descmod)
+			descmod := array{};
+		endif
+
+		if (!(descmod_item in descmod))
+			descmod.append(descmod_item);
+			SetObjProperty(who,"descmod",descmod);
+		endif
+
+		SetName(who, who.name);	
+	endif
+				
+	if (who.npctemplate)
+		return 1;
+	endif
+
+	set_critical(1);
+	var hostiles := ListHostiles( who );
+	if (hostiles.size() > 0 || who.warmode)
+      var c_amt := 1;
+      if (!who.weapon.IsMagicWeapon())
+         c_amt += 3;
+      endif
+
+      if (!AP_ConsumeVital(who, STAMINA, c_amt))
+         PrintTextPrivate(who, "Stamina Insuficiente!", SSM_FAIL);
+         return 0;
+      endif
+	endif
+
+	var ret := SetEquipmentMods(who, item);
+	set_critical(0);
+
+   if (ret)
+      if (coverFace(item))
+         if (!GetObjProperty(who, "realname"))
+            SetObjProperty(who, "realname", who.name);
+         endif
+         if (GetObjProperty(who, "description"))
+            SetObjProperty(who, "olddescription", GetObjProperty(who, "description"));
+            EraseObjProperty(who, "description");
+         endif
+         SetName(who, "Desconhecido");
+      endif
+   endif
+
+	return ret;
+endprogram
+
+
+function SetEquipmentMods(who, item)
+   if (!who.cmdlevel && GetObjProperty(item, "gm_createdby") && !GetObjProperty(item, "gm_allowed"))
+		SendSysMessageEx(who, "Você não pode vestir um item criado por GM.", SSM_FAIL);
+      return 0;
+   endif
+   
+	var itemdesc := ReadConfigFile("::itemdesc");
+	var item_e := itemdesc[item.objtype];
+
+	var restrict := Cint(item_e.GenderSpecific);
+	if((restrict == 1) and (CheckGender(who) != 2))
+		SendSysMessageEx(who, "Apenas mulheres podem vestir isto.", SSM_FAIL);
+		return 0;
+   elseif (cint(item_e.intrequired) > AP_GetStat(who, INTELLIGENCE))
+		SendSysMessageEx(who, "Você não tem inteligência o suficiente para usar isso.", SSM_FAIL);
+      return 0;
+	endif
+
+	if (item_e.Pericia)
+      if (item_e.ReqPericia)
+         if (AP_GetTrueSkill(who, item_e.Pericia) < cint(item_e.ReqPericia))
+		      SendSysMessageEx(who, "Você não tem o mínimo de habilidade necessário para equipar este item.", SSM_FAIL);
+            return 0;
+         endif
+      endif
+
+      if (!HaveSkill(who, item_e.Pericia))
+         var value := cint(GetObjProperty(who, "ArmorPenalty")) +1;
+         SetObjProperty(who, "ArmorPenalty", value);
+      endif
+
+      if (item_e.Pericia["Pesada"])
+         who.setToughness(3);
+      elseif (item_e.Pericia["Média"])
+         who.setToughness(2);
+      elseif (item_e.Pericia["Leve"])
+         who.setToughness(1);
+      endif
+	endif
+
+   var specialprop := GetObjProperty(item, "setprop");
+   if (specialprop)
+      specialprop := Splitwords(specialprop);
+      if (specialprop[2]["+"] || specialprop[2]["-"])
+         specialprop[2] := cint(specialprop[2]);
+      endif
+      SetObjProperty(who, specialprop[1], specialprop[2]);
+   endif
+
+	// if (item.isa(POLCLASS_ARMOR))
+	// 	EraseObjProperty(who, "twohanded");
+	// endif
+
+	//sneak
+	var penalty_list := GetConfigStringArray(item_e, "Penalty");
+	foreach skill in penalty_list
+		AP_ModifySkillMod(who, skill, -1);
+	endforeach
+
+	//verifica se eh magico
+	var mods := GetObjProperty(item, "equip");
+	if (!mods)
+		mods := struct{};
+	endif
+//	SendSysMessage(who, " " + mods + " " + mods.keys().size());
+	foreach mod in (mods.keys())
+		if (mod == "strmod")
+			AP_ModifyStatMod(who, STRENGTH, Cint( mods["strmod"] ));
+		elseif (mod == "dexmod")
+			AP_ModifyStatMod(who, DEXTERITY, Cint( mods["dexmod"] ));
+		elseif (mod == "intmod")
+			AP_ModifyStatMod(who, INTELLIGENCE, Cint( mods["intmod"] ));
+		elseif (mod == "conmod")
+			AP_ModifyStatMod(who, CONSTITUTION, Cint( mods["conmod"] ) );
+		elseif (mod == "wismod")
+			AP_ModifyStatMod(who, WISDOM, Cint( mods["wismod"] ) );
+		elseif (mod == "manamod")
+			SetObjProperty(who, "manamod", Cint(GetObjProperty(who, "manamod")) + Cint( mods["manamod"] ));
+      elseif (mod == "toughmod")
+         who.setToughness(cint(mods["toughmod"]));
+		elseif (mod == "hitsmod")
+			var prevhits := Cint(GetObjProperty(who, "hitsmod"));
+			SetObjProperty(who, "hitsmod",  prevhits + Cint(mods["hitsmod"] ) );
+		elseif (mod == "stammod")
+			SetObjProperty(who, "stammod", Cint(GetObjProperty(who, "stammod")) + Cint( mods["stammod"] ) );
+      elseif (mod == "dmg_reduce")
+			var dmg_reduce := GetObjProperty(who, "dmg_reduce");
+         if (!dmg_reduce) dmg_reduce := struct{}; endif
+         foreach type in (mods[mod].keys())
+            dmg_reduce[type] := cint(dmg_reduce[type]) + mods[mod][type];
+         endforeach
+         SetObjProperty(who, "dmg_reduce", dmg_reduce);
+      elseif (mod == "regen_rate")
+			var regen_rate := AP_LoadVitalRegenRateProp(who);
+         foreach type in (mods[mod].keys())
+            regen_rate[type] := cint(regen_rate[type]) + mods[mod][type];
+         endforeach
+         AP_SaveVitalRegenRateProp(who, regen_rate);
+		else // se não eh nada acima eh skillmod ou error :p
+			AP_ModifySkillMod(who, mod, Cint(mods[mod]));
+		endif
+	endforeach
+
+   if (mods.keys().size() > 0)
+      RecalcVitals(who);
+   endif
+	return 1;
+endfunction;

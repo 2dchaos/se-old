@@ -1,0 +1,19 @@
+use uo;
+use util;
+
+include "include/damage";
+include "include/client";
+include "include/sounds";
+include "include/say";
+
+program HitScript(params)
+	var defender	:= params[2];
+	params := 0; // Not needed anymore.
+
+	if (RandomInt(100) < 40 ) //20% de chance sempre
+		PrintText(defender, "*cria do pantano surge entre monstro do pantano*");
+		CreateNpcFromTemplate(":ghaia:cria_pantano", defender.x, defender.y, defender.z,  0, defender.realm);
+	endif
+	
+	return 1;
+endprogram

@@ -1,0 +1,117 @@
+
+use uo;
+use os;
+use polsys;
+
+include ":tn:cooldown";
+include ":combat:combat";
+include ":attributes:attributes";
+include ":fls_core:packets";
+include ":blood:blood";
+include "include/damage";
+include "include/tileEffects";
+include "include/sysEvent";
+include "include/client";
+include "include/say";
+include "include/objtype";
+include "include/sounds";
+
+program destroyitems(parms)
+	var who:=parms[1];
+	var item:=parms[2];
+
+	/*
+		0x0f51	dagger
+		0x13f6	butcher
+		0x0ec2	cleaver 
+		0x0ec4	SkinningKnife 
+		11565	karda
+	*/
+   var cfg := ReadConfigFile(":destroyable:destroyitems");
+	var cfgitems := GetConfigStringKeys( cfg);
+	var elem := FindConfigElem( cfg, item.graphic);
+
+	var normal := GetConfigString( elem, "normal");
+   if (!normal)
+      normal := item.graphic;
+   endif
+	var quebrado := GetConfigString( elem, "quebrado");
+   if (!quebrado)
+      quebrado := 3119;
+   endif
+	
+	if( GetObjProperty(item, "broken"))
+		SendSysMessageEx(who,"Isto parece já estar quebrado.",SSM_FAIL);
+		return 0;
+	elseif(AP_GetVital(who, "Stamina") < 15)
+      SendSysMessageEx(who, "Você esta cansado demais.",SSM_FAIL);
+      return 0;
+   elseif ( who.weapon.isBow() || who.weapon.isMagicWeapo())
+      return 0;
+   endif
+
+   if (GetObjProperty(item, "protected"))
+      var event := struct{
+         "type" := EVID_TAUNT,
+         "source" := who
+      };
+
+      foreach monster in ListMobilesNearLocationEx(item.x, item.y, item.z, 12, LISTEX_FLAG_NORMAL|LISTEX_FLAG_HIDDEN|LISTEX_FLAG_NPC_ONLY)
+         if (!monster.master && monster.alignment == 1)
+            SendEvent(monster, event);
+         endif
+         sleepms(2);
+      endforeach
+   else
+      var mobiles:= ListMobilesNearLocation( item.x, item.y, item.z, 20, LISTEX_FLAG_NORMAL|LISTEX_FLAG_NPC_ONLY );
+      var ev := struct;
+      ev.+type := EVID_HERDING;
+      ev.+data := array{item.x, item.y};
+
+      foreach mob in mobiles
+         SendEvent(mob, ev);
+         SendEvent(mob, ev);
+         sleepms(2);
+      endforeach
+   endif
+   
+
+      
+   var hits     := cint(GetObjProperty(item,"hits"));
+   PlayAttackAnimation(who, who.weapon);
+   sleepms(600);
+   PlaySoundEffect(who, FLS_SFX_SKILL_LUMBERJACK);
+   PlayStationaryEffect(item.x, item.y, item.z, FX_SMOKE, 2, 4);
+   ConsumeVital( who, STAMINA, 2000 );
+
+   hits -= 1;
+   SetObjProperty(item, "hits", hits);
+
+   if( item.isA(POLCLASS_DOOR) && (hits > 0))
+      PrintText(item, "*A " +item.desc+ " começa a ceder*");
+   endif
+
+   if (hits <= 0)
+      SetObjProperty(item, "broken", item.graphic);
+      item.graphic:=Cint(quebrado);
+      SetObjProperty(item,"hits",3);
+      
+      PrintText(who, "*Quebra " +item.desc+ "*");
+
+      var time_respawn := AddTimeTo(ReadGameClock(), 25+RandomDiceRoll("3d20"), "minutes");
+      SetObjProperty(item, "spawned_time", time_respawn);
+
+      if (item.isA(POLCLASS_CONTAINER))
+         var container_items := EnumerateItemsInContainer(item);
+         foreach citem in container_items
+            if (RandomInt(100) < 25)
+               MoveObjectToLocation(citem, item.x, item.y, item.z, item.realm, MOVEOBJECT_FORCELOCATION);
+            else
+               DestroyItem(citem);
+            endif
+            sleepms(2);
+         endforeach
+         SendSysMessageEx(who, "Itens do container foram perdidos ao quebra-lo.", SSM_FAIL);
+      endif
+   endif
+endprogram

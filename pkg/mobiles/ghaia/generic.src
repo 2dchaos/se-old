@@ -1,0 +1,353 @@
+use uo;
+use os;
+use npc;
+use cfgfile;
+
+include ":ghaia:generic";
+include ":ghaia:ghaia";
+include ":ghaia:objective";
+include ":ghaia:genericControl";
+include ":timedscripts:timedScripts";
+
+var me         := self();
+var npccfgfile := NPC_GetNPCConfig(me, 1);
+var idlesnd;
+var areasize;
+var custombehaviors;
+var combatevents := array{};
+var flee_point   := 0.1;
+var mystate      := INITIALIZING;
+var healing_amount;
+
+program NPCMonitor()
+   if (GetObjProperty(me, "%CooldownList%") || GetObjProperty(me, "%TimerList%"))
+      TS_StartController(me);
+   endif
+
+   if (GetObjProperty(me, "script_frozed")) me.frozen := 0; endif
+   if (GetObjProperty(me, "hitched")) me.frozen := 1; endif
+	genericControl();
+endprogram
+
+function CloseDistance( opponent )
+	if ((cint(npccfgfile.Ranged) || me.weapon.isBow()) && !GetObjProperty(me, "closecombat"))
+		return CloseDistanceArcher(opponent);
+	endif
+
+	return CloseDistanceMeele(opponent);
+endfunction
+
+function CloseDistanceMeele( opponent )
+	if ( GetObjProperty(me, "noclosecombat") == 1)
+		return 0;
+   elseif (me.hidden && Distance(me, opponent) <= 1)
+      me.hidden := 0;
+	endif
+
+	var sleepdelay := 270 - me.run_speed;//(CInt(GetDexterity(me)) * 1.5);
+
+	if (sleepdelay < 0)
+		sleepdelay := 0;
+	endif
+
+   if (CoordinateDistance( me.x, me.y, opponent.x, opponent.y ) > 1)
+      CalcPathAndMove(me, opponent, sleepdelay);
+      return 0;
+   else
+	   return 1;
+   endif  
+endfunction
+
+function CloseDistanceArcher(opponent)
+	var sleepdelay := 270 - me.run_speed;
+
+	if (sleepdelay < 0)
+		sleepdelay := 50;
+	endif
+
+	var dist := CoordinateDistance(me.x, me.y, opponent.x, opponent.y);
+	
+	if (me.z > cint(opponent.z+15) && !CheckLineofSight(me, opponent)) //checa se esta em cima de alguma torre
+      me.setAggro(opponent.serial, -10);
+      ChooseHighestOpponent(me, opponent);
+		sleepms(sleepdelay);
+		return 0; //se estiver em cima de torres, não se move do lugar
+	endif
+
+   var max_range := cint(npccfgfile.AttackMaxRange);
+   var min_range := cint(npccfgfile.AttackMinRange);
+   if (!max_range) max_range := 6; endif;
+   if (!min_range) min_range := 3; endif;
+
+	if (min_range != 1 && dist < cint(npccfgfile.AttackMinRange) )
+		RunAwayFrom(opponent);
+		sleepms(sleepdelay);
+	elseif (dist > max_range)
+		CalcPathAndMove(me, opponent, sleepdelay);
+	else
+		return 1;
+	endif
+
+	return 0;
+endfunction
+
+function lookAround()
+   if (RandomInt(5) == 1)
+      PerformAction(me, ANIM_FIDGET_1);
+   endif
+   
+   foreach npc in ListMobilesNearLocationEx(me.x, me.y, me.z, areasize, LISTEX_FLAG_HIDDEN|LISTEX_FLAG_NORMAL);
+      if( !CheckLineOfSight(me, npc))
+         if (CanFight(me, npc) )
+            Fight(npc);
+         endif
+      endif
+      sleepms(2);
+   endforeach
+endfunction
+
+
+function Fight(opponent, alerted := 0)
+  // mystate := FIGHTING;
+   if(opponent.serial == me.serial)
+      SetWarMode(0);
+      opponent := 0;
+      return;
+   endif
+    
+   set_priority(50);
+   SetOpponent(opponent);
+   DisableMainEvents();
+   EnableCombatEvents();
+   TurnToward(opponent);
+   var loops := 0;
+   var waittime := 0;
+   var ev;
+
+   if (!alerted) 
+      AlertAllies(me, opponent); 
+   endif
+/*   var speech := GetConfigStringArray( npccfgfile, "InitCombatSpeech" );
+   if (speech.size() > 0)
+   if (RandomInt(100)  < 30) //sempre 30% de chance de falar
+   Say(speech[RandomInt(speech.size()+1)]);
+   endif
+   endif
+*/
+
+
+   var dist;
+   while( me && loops <= 140)
+      sleepms(15);
+      if (npccfgfile.Category == "moriquendi")
+         if (GetGlobalProperty("dia") == "dia" && !InDungeon(me))
+            ApplyRawDamage(me, 200);
+            ApplyRawDamage(me, 200);
+         endif
+      endif
+
+      if (me.dead || !opponent || opponent.concealed || opponent.hidden)
+         // me.remAggro(opponent.serial);
+         break;
+      elseif (opponent.dead)
+         //Somente checa se tem mais inimigo, se n se afsata do corpo.
+         var achou := 0;
+         foreach mob in ListMobilesInLineOfSight(me, cint(areasize) + 2)
+            if( CanFight(me, mob) )
+               achou := 1;
+               break;
+            endif
+            sleepms(2);
+         endforeach
+
+         if (achou)
+            break;
+         endif
+         
+         // Pra se afastar do corpo e o cara poder correr
+         var corpo := opponent.GetCorpse();
+         var end   := ReadGameClock() + 10;
+         while (CoordinateDistance(me.x, me.y, corpo.x, corpo.y) < areasize + 5 && end > ReadGameClock())
+            RunAwayFromLocation(corpo.x, corpo.y);
+            sleepms(100);
+         endwhile
+         break;
+      endif
+
+      if (JustTeleported(opponent))
+         var area := ListItemsNearLocationOfType(me.x, me.y, me.z, 10, 25091);
+         if (area.size() < 1)
+            break;
+         else
+            var item := area[1];
+            NpcGoTo(item, 2);
+         endif
+      endif
+      
+      dist := CoordinateDistance(me.x, me.y, opponent.x, opponent.y);
+      if ( (areasize >= 20 && dist > areasize) || (dist > 20 && areasize < 20) )
+         break;
+      endif
+
+      if (!me.frozen && !me.paralyzed)
+         SetObjProperty(me, "#Casting", 1);
+         foreach ce in combatevents
+            if (!GetCooldown(me, StrReplace(ce.name, " ", "_")))
+               start_script(":ghaia:special/genericspecial" , array{me, ce});
+            endif
+            sleepms(2);
+         endforeach
+         EraseObjProperty(me, "#Casting");
+      endif
+
+      if (npccfgfile.Category == "moriquendi" && !GetObjProperty(me, "noheal"))
+         if (!healing_amount)
+            healing_amount := cdbl(AP_GetVitalMaximumValue(me, HITS)) * 0.4;
+         endif
+
+         var last_autoheal := cint(GetObjProperty(me, "demon_heal"));
+         if (last_autoheal <= ReadGameClock())
+            var reduce_heal := 0;
+            if (TS_GetCooldown(me, "divine_damage"))
+               reduce_heal := cdbl(GetObjProperty(me, "#reduce_heal")); 
+            endif
+            SetObjProperty(me, "demon_heal", ReadGameClock() + 1);
+            HealFLS(me, cint(healing_amount - (healing_amount * reduce_heal)));
+         endif
+      endif
+
+      if ("openLevers" in custombehaviors)
+         var levers := ListItemsNearLocationOfType(me.x, me.y, me.z, 8, 0x108c);
+         foreach lever in levers
+            if (GetObjProperty(lever, "mobs_open") && GetObjProperty(lever, "status") == "off")
+               for i := 1 to 8
+                  RunToward(lever);
+                  if (GetObjProperty(lever, "status") == "off")
+                     if (Distance(lever, me) <= 1)
+                        UseItem(lever, me);
+                        break;
+                     endif
+                  else
+                     break;
+                  endif
+                  sleepms(80);
+               endfor
+            endif
+
+            sleepms(2);
+         endforeach 
+      endif
+
+      if(!CloseDistance(opponent))
+         loops := loops + 1;
+         waittime := 0;
+         if ("charge" in custombehaviors)
+            var charge := cint(GetObjProperty(me, "#charge_enemy"));
+            SetObjProperty(me, "#charge_enemy", charge+1);
+            if (charge+1 == 8) 
+               PrintText(me, "*charging*", SSM_FAIL); 
+               TS_StartTimer(me, "npc_run", 20, 50);
+            elseif (charge == 1 && cint(npccfgfile.RunSpeed) != me.run_speed)
+               TS_LowerDuration(me, "npc_run", -1);
+            endif
+         endif
+      else
+         if ("matilha" in custombehaviors && RandomInt(2) == 1)
+            if (!IsBehind(opponent, me.x, me.y))
+               var allies := GetAlliesNear(me, 4);
+               if (allies.size() > 1)
+                  RunAwayFrom(opponent);
+                  sleepms(275 - me.run_speed);
+                  RunAwayFrom(opponent);
+                  sleepms(275 - me.run_speed);
+                  RunAwayFrom(opponent);
+               endif
+            endif
+         endif
+         loops := 0;
+         waittime := 1;
+      endif
+      
+      CheckFlee(opponent);
+      
+      ev := wait_for_event(waittime);
+      if(ev.type == SYSEVENT_SPEECH)
+         continue;
+      endif
+      
+      case (ev.type)
+         EVID_OPPONENTHEALED:
+            if (!ev.source)
+               continue;
+            endif
+
+            if (ev.target == opponent)
+               me.setAggro(ev.source.serial, 5);
+            endif
+            ChooseHighestOpponent(me, opponent, ev.source);
+            continue;
+         SYSEVENT_DAMAGED: 
+            if (!ev.source)
+               continue;
+            endif
+            me.setAggro(ev.source.serial, cint(ev.damage/2)+1+cint(ev.source.getToughness()));
+            ChooseHighestOpponent(me, opponent, ev.source);
+            /*(CoordinateDistance(me.x, me.y, ev.source.x, ev.source.y) < CoordinateDistance(me.x, me.y, opponent.x, opponent.y)) ||*/
+            // if (ev.source && (!CheckLineOfSight(me, opponent) || !opponent))
+            //    if ( (opponent) && RandomInt(5) == 1 ) //se ainda existir o oponente so tem 25% de chance de mudar de alvo
+            //       opponent := ev.source;
+            //       SetOpponent(opponent);
+            //       TurnToward(opponent);
+            //    elseif ( (!opponent) || (!CheckLineOfSight(me, opponent))) //mas se não tiver mais o oponent entao 100% de chance de mudar de alvo
+            //       opponent := ev.source;
+            //       SetOpponent(opponent);
+            //       TurnToward(opponent);
+            //    endif
+            // endif
+            continue;
+
+         SYSEVENT_ENGAGED:
+            me.setAggro(ev.source.serial, 5);
+            ChooseHighestOpponent(me, opponent, ev.source);
+            continue;
+
+         EVID_TAUNT:
+            me.setAggro(ev.source.serial, 20);
+            ChooseHighestOpponent(me, opponent, ev.source);
+            continue;
+
+         EVID_FLEE:
+            if (ev.source)
+               Flee(ev.source);
+            endif
+            continue;
+         EVID_PEACEMADE:
+         //	sendsysmessage(ev.source, "peacemade");
+            SetPeaceMade();
+            return;
+            continue;
+         EVID_COMBAT_MOVE:
+            RunTowardLocation( ev.x, ev.y );
+            if (CoordinateDistance(me.x, me.y, ev.x, ev.y) <= 1)
+               clear_event_queue();
+            endif
+      endcase
+   endwhile
+
+   DisableCombatEvents();
+   EnableMainEvents();
+   SetWarMode(0);
+   SetOpponent(0);
+   sleepms(1);
+endfunction
+
+function JustTeleported(mobile)
+	var tele_time := CInt(GetObjProperty(mobile, "#Teleported"));
+	if ( tele_time > ReadMillisecondClock()-500 )
+		// Mobile just teleported. Too soon to teleport again.
+		return 1;
+	else
+		// Safe to teleport the mobile
+		return 0;
+	endif
+endfunction

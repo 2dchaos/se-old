@@ -1,0 +1,11 @@
+use uo;
+use os;
+
+
+program UpdateGrower(grower)
+	//Update old plants to the new system.
+	if ( grower.IsDead() )
+		grower.SetWaterAmount(0);
+	endif
+   sleep(10);
+endprogram

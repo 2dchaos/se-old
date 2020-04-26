@@ -1,0 +1,356 @@
+use uo;
+use os;
+use npc;
+use cfgfile;
+
+include "include/say";
+include ":ghaia:ghaiaInit";
+include ":dyes:include/dyes";
+include ":ghaia:npcSettings";
+include ":ghaia:ghaia";
+include ":ghaia:generic";
+
+var me         := self();
+var npccfgfile := NPC_GetNPCConfig(me, 1);
+var idlesnd, areasize, custombehaviors;
+var mystate      := INITIALIZING;
+var flee_point   := 0.1;
+var alert_allies := 0;
+var align, throwinfo, following;
+var wait_time := 50;
+var wanders := 0;
+var guild, guild_leader;
+
+var g_settings:= dictionary; //"setting name"->value
+var g_scripts := dictionary; // "script type"->value{.flags, .script}
+
+function EnableMerchantEvents()
+   var setting_list := GetConfigStringDictionary(npccfgfile, "ghaiaSettings");
+   DisableEvents(/*SYSEVENT_SPEECH +*/ SYSEVENT_LEFTAREA + SYSEVENT_DISENGAGED /*+ SYSEVENT_OPPONENT_MOVED*/);
+   EnableEvents(SYSEVENT_DOUBLECLICKED, unpack(setting_list.DblClickRange));
+   EnableEvents(SYSEVENT_SPEECH, unpack(setting_list.HearSpeech));
+   EnableEvents(SYSEVENT_ENTEREDAREA, unpack(setting_list.LookingRange));
+   EnableEvents(SYSEVENT_ENGAGED|SYSEVENT_DAMAGED|SYSEVENT_ITEM_GIVEN, 2);
+endfunction
+
+program Merchant()
+   var ev;
+
+   set_critical(1);
+   //printtextabove(me, "vai inicializr");
+   InitializeSettings();
+
+   Setup(me);
+   set_critical(0);
+   SetWarMode( 0 );
+   ev := os::wait_for_event(0);
+   EnableMerchantEvents();
+   Set_Event_Queue_Size(10);
+
+   if (GetObjProperty(me, "guild"))
+      guild := FindGuild(GetObjProperty(me, "guild"));
+      guild_leader := guild.GetProp("leader");
+   endif
+
+   if (!following) 
+      wait_time := 50;
+   else
+      wanders := 0;
+   endif
+
+    while(me)
+      if(wanders >= 30)
+         wanders := 0;
+         ev := sleepmode();
+      else
+         ev := os::wait_for_event(wait_time);
+      endif
+
+      Follow();
+      // Flee();
+
+      if(ev)
+         case(ev.type)
+            SYSEVENT_ENTEREDAREA:
+               if (g_scripts["SeeEvent"])
+                  HandleSeeEvent(ev);
+               endif
+               break;
+            SYSEVENT_ENGAGED:
+               Speak("Não seja tolo de me atacar!", "yell");
+               break;
+            SYSEVENT_DAMAGED:
+               // Speak("Socorro! Estão me atacando!"), "yell");
+               // Ignore 'damaged'.
+               break;
+            SYSEVENT_ITEM_GIVEN:
+               ItemGivenEvent(ev);
+               break;
+            SYSEVENT_DOUBLECLICKED:
+                DblClickScript(ev);
+                break;
+            SYSEVENT_SPEECH:
+               if (CheckLineOfSight(me, ev.source))
+                  if (!isBehind(ev.source, me.x, me.y))
+                  HandleSpeech(ev);
+                  endif
+               endif
+               break;
+            EVID_DOOBJECTIVE:
+               if (ev.destiny)
+                  wanders := 0; NpcGoTo(ev.destiny, ev.move_type);
+               endif
+            EVID_SPEAK:
+              Speak(ev.text, ev.texttype);
+            // EVID_ALERT_ALLIES:  wanders := 0; Fight(ev.opponent, 1);
+            // EVID_HERDING:       herd(ev);
+            // EVID_TAUNT:
+            // EVID_FLEE:
+            // EVID_DOOBJECTIVE:
+
+         endcase
+      endif   
+      wanders += 1;
+      sleepms(5);
+    endwhile
+endprogram
+
+function HandleSeeEvent(byref event)
+   var packeded := struct{
+     "source" := event.source,
+     "me"     := me,
+     "type"   := "SeeEvent"
+   };
+
+   var process := start_script(g_scripts["SeeEvent"], packeded);
+
+   if ( process.errortext )
+      var errmsg := "Error::ghaiaSeeEvent() - ['SeeEvent'] [{}] failed to start! ->{}".format(g_scripts["SeeEvent"], process.errortext);
+      NPC_ErrorSysLog(me, errmsg);
+      return error{"errortext":=errmsg};
+   endif
+
+   return 0;
+endfunction
+
+function Follow(character := 0)
+   if (character)
+      if ( character == me || !character.IsA(POLCLASS_MOBILE) )
+         return;
+      endif
+      following := character;
+      return;
+   elseif (!following)
+      return;
+   endif
+
+   var dist := Distance(me, following);
+
+   if( dist <= 2 )
+      wait_time := 1;
+   elseif( dist > 25 )
+      following := 0;
+   elseif ( dist > 4 )
+      RunTowardLocation( following.x, following.y );
+      wait_time := 0;
+   else
+      WalkTowardLocation( following.x, following.y );
+      wait_time := 0;
+   endif
+endfunction
+
+function ItemGivenEvent(byref event)
+   var occupied := GetObjProperty(me, "#occupied");
+   if (occupied && GetProcess(occupied))
+      Speak("*observa {}*".format(event.source.name));
+      SendSysMessageEx(event.source, "O mercador parece ocupado agora.", SSM_INFO);
+      return;
+   endif
+
+   var packed := struct{
+     "source" := event.source,
+     "me"     := me,
+     "item"   := event.item,
+     "type"   := "ItemGivenEvent"
+   };
+
+   if (g_scripts["ItemGivenEvent"] && Distance(packed.source, me) <= 2 )
+      var process := start_script(g_scripts["ItemGivenEvent"], packed);
+
+      if ( process.errortext )
+         var errmsg := "Error::ghaiaItemGivenEvent() - ['ItemGiven'] [{}] failed to start! ->{}".format(g_scripts["ItemGivenEvent"], process.errortext);
+         NPC_ErrorSysLog(me, errmsg);
+         return error{"errortext":=errmsg};
+      endif
+   else 
+      MoveItemToContainer(event.item, event.source.backpack);
+   endif
+    // Train skills here?
+
+   return 0;
+endfunction
+
+function HandleSpeech(byref event)
+   var occupied := GetObjProperty(me, "#occupied");
+   if (event.source.serial == me.serial)
+      return;
+   elseif (occupied && GetProcess(occupied))
+      Speak("*observa {}*".format(event.source.name));
+      SendSysMessageEx(event.source, "O mercador parece ocupado agora.", SSM_INFO);
+      return;
+   endif
+   
+   var packed := struct{
+     "source" := event.source,
+     "me"     := me,
+     "text"   := event.text,
+     "type"   := "SpeechEvent"
+   };
+
+   if (Distance(event.source, me) > cint(g_settings["HearSpeech"]))
+      return 0;
+   endif
+
+   var privs := guild.GetProp(cstr(event.source.serial));
+   var is_leader := (event.source.serial == guild_leader);
+   if ((privs.above_merchant || is_leader || event.source.cmdlevel >= 2) && event.text[me.name] || event.text["todos"] )
+      if (event.text["siga"] || event.text["seguir"])
+         PrintText(me, "As suas ordens");
+         Follow(event.source);
+         wait_time := 0;
+         return;  
+      elseif (event.text["pare"] || event.text["parar"])
+         PrintText(me, "As suas ordens");
+         following := 0;
+         return;
+      elseif (event.text["ir"] || event.text["at"])
+         PrintText(me, "As suas ordens");
+         return;  
+      elseif (event.text["manter"] || event.text["posi"])
+         PrintText(me, "As suas ordens");
+         following := 0;
+         var thefacing := event.source.facing;
+         NpcGoTo(event.source, 1);
+         me.facing := thefacing;
+         return;  
+      endif
+   endif
+   
+   if (!g_scripts["TalkEvent"])
+      return;
+   endif
+
+   var process := start_script(g_scripts["TalkEvent"], packed);
+
+   if ( process.errortext )
+      var errmsg := "Error::TalkEvent() - ['Listen'] [{}] failed to start! ->{}".format(g_scripts["TalkEvent"], process.errortext);
+      NPC_ErrorSysLog(me, errmsg);
+      return error{"errortext":=errmsg};
+   endif
+
+   return 0;
+endfunction
+
+function DblClickScript(event)
+   if ( !g_scripts["DblClick"] )
+      return 1;
+   elseif ( Distance(event.source, me) > g_settings["DblClickRange"])
+      return 0;
+   endif
+
+   var occupied := GetObjProperty(me, "#occupied");
+   if (occupied && GetProcess(occupied))
+      Speak("*observa {}*".format(event.source.name));
+      SendSysMessageEx(event.source, "O mercador parece ocupado agora.", SSM_INFO);
+      return;
+   endif
+
+   var process := start_script(g_scripts["DblClick"], array{me, event});
+
+   if ( process.errortext )
+      var errmsg := "Error::ghaiaDblClick() - ['DblClick'] [{}] failed to start! ->{}".format(g_scripts["DblClick"], process.errortext);
+      NPC_ErrorSysLog(me, errmsg);
+      return error{"errortext":=errmsg};
+   endif
+endfunction
+
+function Setup(me)
+   var npc_cfg     := ReadConfigFile(":*:npcdesc")[me.my_template()];
+   npccfgfile := npc_cfg;
+
+   if (!GetObjProperty(me, "started"))
+      var rndint := RandomInt(3);
+      if (GetObjProperty(me, "forcesex"))
+         rndint := GetObjProperty(me, "forcesex");
+      endif
+      if (rndint == 2)
+         me.objtype := me.objtype+1;
+         me.graphic := me.graphic+1;
+         me.trueobjtype := me.objtype+1;
+         me.gender := 1;
+      endif
+      SetupColor(me);
+      SetupEquip(me);
+      SetupName(me);
+      SetObjProperty(me, "DaysOfService", polcore().systime);
+      SetObjProperty(me, "started", 1);
+   endif
+
+   if ( !me.backpack )
+      var new_pack := CreateItemAtLocation(me.x, me.y, me.z, "backpack", 1);
+      EquipItem(me, new_pack);
+   endif
+endfunction
+
+// function InitScript(params)
+//     var npc := params[1];
+//     // var settings := params[2];
+
+//     npc.color := 1056 - RandomInt(55); // 1002-1056
+//     npc.truecolor := npc.color;
+
+//     var result;
+//     case( RandomInt(1) )
+//         0: // Male
+//             npc.gender := 0;
+//             npc.graphic := 400;
+//             result := NPC_SetupName(npc, "Human_Male");
+//         1: //Female
+//             npc.gender := 1;
+//             npc.graphic := 401;
+//             result := NPC_SetupName(npc, "Human_Female");
+//     endcase 
+    
+//     if (npc.npctemplate == ":merchants:estalagem")
+//         var innkeepers := getglobalproperty("InnKeeper");
+//         if (innkeepers == error)
+//             innkeepers := array;
+//         endif
+//         if (npc.serial in innkeepers)
+//         else
+//             innkeepers.Append(npc.serial);
+//             setglobalproperty("InnKeeper",innkeepers);
+//         endif
+//     endif
+    
+    
+//     if ( result.errortext )
+//         return result;
+//     endif
+
+//     result := NPC_SetupRandomEquipment(npc);
+//     if ( result.errortext )
+//         PrintTextAbove(npc, result.errortext);
+//         return 0;
+//     endif
+    
+//     foreach item in ( ListEquippedItems(npc) )
+//         if ( CanDye(item) )
+//             item.color := RandomDyeColor();
+//         endif
+
+//         SleepMS(2);
+//     endforeach
+    
+//     return 1;
+// endfunction

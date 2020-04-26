@@ -1,0 +1,60 @@
+/* $Id$
+ *
+ */
+
+use uo;
+use util;
+
+include "include/client";
+include "include/say";
+include "include/damage";
+include ":timedscripts:timedScripts";
+
+include ":traps:traps";
+
+program trapScript(params)
+	var mobile := params[1];
+	var object := params[2];
+	var trap_info := params[3];
+	var sounds := { 560, 561, 562};
+	//var trap_index := params[4];
+	params := 0; // Not needed anymore.
+	
+	PlaysoundEffect(object, sounds.randomentry() );
+	PlayStationaryEffect(object.x, object.y, object.z, GFX_POISON_GAS, 10,10, 0, object.realm);
+
+   var strength := trap_info.strength;
+   var danger   := trap_info.danger;
+   if (!strength)
+      strength := 1;
+   endif
+   if (!danger)
+      danger := 1;
+   endif
+
+   var diff     := GetTrapAC(danger);
+   var dmgfinal := getTrapDamage(strength, danger);
+
+	var mobiles := ListMobilesNearLocationEx(object.x, object.y, object.z, 3, LISTEX_FLAG_HIDDEN + LISTEX_FLAG_NORMAL);
+	foreach mobile in mobiles
+		if (!mobile.master)
+			if (rollResistDice(mobile, CONSTITUTION) >= diff)
+            if (AP_GetTrueSkill(mobile, SABOTAGEM) >= 6)
+               SendSysMessageEx(mobile, "Você resistiu ao veneno.", SSM_INFO);
+            else
+               SendSysMessageEx(mobile, "Você evitou parte do veneno.", SSM_INFO);
+				   TS_StartTimer(mobile, "defaultPoison", 60, danger-1);
+            endif
+			else
+            if (AP_GetTrueSkill(mobile, SABOTAGEM) < 6)
+               SendSysMessageEx(mobile, "Você resistiu ao veneno.", SSM_INFO);
+				   TS_StartTimer(mobile, "defaultPoison", 60, danger-1);
+            else
+               SendSysMessageEx(mobile, "Você evitou o veneno.", SSM_INFO);
+            endif
+			endif
+		endif
+	endforeach
+	
+	return 1;
+endprogram

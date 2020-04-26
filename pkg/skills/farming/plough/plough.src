@@ -1,0 +1,110 @@
+use uo;
+use os;
+
+include ":attributes:include/attributeConstants";
+include ":attributes:include/attributes";
+
+const PLOUGH_SOUND 	:= 0x58;
+const ITEM_DIRT		:= 0x31F4;
+
+program UsePlough(who, plough)
+	if ( !ReserveItem(plough) )
+		SendSysMessageEx(who, "Alguem ja esta usando isto.");
+		return;
+	elseif ( Distance(who, plough) > 2 )
+		SendSysMessageEx(who, "Você esta muito distante da ferramenta.");
+		return;
+	endif
+
+	var repeatable := GetObjProperty(plough, "repeat") ;
+	
+	while ( who.ip )
+		SendSysMessageEx(who, "Onde você deseja arar a terra?");
+		var targ := TargetCoordinates(who);
+		if ( !targ )
+			SendSysMessageEx(who, "Cancelado.");
+			return;
+		elseif ( CoordinateDistance(plough.x, plough.y, targ.x, targ.y) > 4 )
+			SendSysMessageEx(who, "Muito longe da ferramenta.");
+		elseif ( !repeatable && Distance(who, targ) > 1)
+			SendSysMessageEx(who, "Muito você esta muito longe.");
+			return;
+		elseif ( !CheckLOSAt(who, targ.x, targ.y, targ.z) )
+			SendSysMessageEx(who, "Você não esta na linha de visao para este local.");
+		elseif ( (targ.item).objtype == ITEM_DIRT )
+			SendSysMessageEx(who, "Este local ja esta arado.");
+		elseif ( GetObjProperty(targ.item, "gmplant") )
+			SendSysMessageEx(who, "Você não consegue remover esta planta.");
+		elseif ( !CanPlough(targ) )
+			SendSysMessageEx(who, "Você não pode arar a terra aqui.");
+		else
+			var temp := FoundPlant(targ);
+			if ( temp )
+				PloughDelay(who);
+				RemovePlant(who, temp);
+			else
+				PloughDelay(who);
+				PloughDirt(who, targ);
+			endif
+		endif
+
+		if ( !repeatable )
+			return;
+		endif
+	endwhile
+endprogram
+
+function FoundPlant(targ)
+	foreach item in ListItemsAtLocation(targ.x, targ.y, targ.z)
+		if ( item.IsPlant() )
+			if ( !GetObjProperty(item, "gmplant") )
+				return item;
+			endif
+		endif
+		sleepms(2);
+	endforeach
+	
+	return 0;
+endfunction
+
+function PloughDelay(who)
+	var i;
+	for (i:=1; i <= 3; i+=1)
+		SendSysMessageEx(who, "Você comecou a arar a terra...", SSM_INFO);
+		PlaySoundEffect(who, PLOUGH_SOUND);
+		sleep(2);
+	endfor
+endfunction
+
+function PloughDirt(who, targ)
+	var test := rollAttrDice(who, WISDOM) + GetSkillBonus(who, PLANTACAO);;
+	if ( test > 12 )
+		SendSysMessageEx(who, "Você conseguiu arar a terra com sucesso.", SSM_INFO);
+		CreateItemAtLocation(targ.x, targ.y, GetWorldHeight(targ.x,targ.y), "dirt", 1);
+	else
+		SendSysMessageEx(who, "Você e incapaz de continuar utilizando essa ferramenta bem para arar a terra.", SSM_FAIL);
+	endif
+endfunction
+
+function RemovePlant(who, targ)
+	SendSysMessageEx(who, "Você arrancou a planta.");
+	DestroyItem(targ);
+endfunction
+
+function CanPlough(targ)
+	if ( (targ.item).IsPlant() )
+		return 1;
+	else	
+		var config := ReadConfigFile(":farming:config/plough");
+		config := config["Valid"];
+		var land_scape := CStr(GetMapInfo(targ.x, targ.y).landtile);
+		if ( targ.objtype )
+			if ( CStr(targ.objtype) in GetConfigStringArray(config, "static") )
+		 		return 1;
+			endif
+		elseif ( land_scape in GetConfigStringArray(config, "landscape") )
+			return 1;
+		endif
+	endif	
+	return 0;
+endfunction
